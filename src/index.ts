@@ -213,7 +213,12 @@ async function checkSeats(ctx: Ctx, show: Show, slot: 'seat' | 'hot' = 'seat'): 
       .map((r) => ({ r, key: `fdfs:${source.name}:${venue.code}:alerted:row:${show.date}:${show.sessionId}:${r.row}` }));
     const seen = rowKeys.length ? await store.mget(rowKeys.map((x) => x.key)) : [];
     const fresh = rowKeys.filter((_, i) => seen[i] === null);
-    opened = fresh.map(({ r }) => ({ row: r.row, free: r.free, middleFree: r.middleFree }));
+    opened = fresh.map(({ r }) => ({
+      row: r.row,
+      free: r.free,
+      middleFree: r.middleFree,
+      seats: r.seats.filter((x) => x.free).map((x) => x.n),
+    }));
     if (opened.length) {
       for (const { key } of fresh) await store.setNX(key, '1', cfg.seats.alertCooldownMinutes * 60);
     }
@@ -239,7 +244,7 @@ async function checkSeats(ctx: Ctx, show: Show, slot: 'seat' | 'hot' = 'seat'): 
       priority,
       summary:
         `${sendMiddle ? (title === 'MIDDLE SEATS' ? 'Middle seats' : title) : 'Rows opened'}: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen}` +
-        (opened.length ? ` — rows ${opened.map((r) => `${r.row} (${r.free})`).join(', ')}` : ` — ${summary.middleFree} middle free`),
+        (opened.length ? ` — ${opened.map((r) => `${r.row}: ${(r.seats ?? []).slice(0, 8).join(', ') || r.free}`).join(' · ')}` : ` — ${summary.middleFree} middle free`),
     });
   }
 

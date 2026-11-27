@@ -198,8 +198,22 @@ describe('rows opened alert', () => {
       attributes: 'LASER 4K ATMOS', time: '10:00 AM', showDateTime: '202612211000', availStatus: '1', categories: [],
     };
     const summary = analyseSeats({ checkedAt: 't', rows: [row('H', 20, () => true)] }, { hallRows: HALL, layoutSource: 'config', policy: POLICY });
-    const text = formatRowsOpened({ show, priority: true }, summary, [{ row: 'H', free: 20, middleFree: 12 }, { row: 'K', free: 3, middleFree: 0 }], 'ALLU Cinemas', 'https://x/seat');
-    for (const part of ['🔥 🔓 <b>ROWS OPENED</b> — ALLU Cinemas', 'Rows opened: <b>H</b> 20 free (12 middle), <b>K</b> 3 free', 'Mon, 21 Dec 2026', 'href="https://x/seat"']) {
+    const text = formatRowsOpened(
+      { show, priority: true },
+      summary,
+      [
+        { row: 'H', free: 10, middleFree: 6, seats: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'] },
+        { row: 'G', free: 2, middleFree: 0, seats: ['17', '18'] },
+      ],
+      'ALLU Cinemas',
+      'https://x/seat',
+    );
+    for (const part of [
+      '🔥 🔓 <b>ROWS OPENED</b> — ALLU Cinemas',
+      'Rows opened: <b>H</b> 01, 02, 03, 04, 05, 06, 07, 08 … (10 free) — 6 middle · <b>G</b> 17, 18',
+      'Mon, 21 Dec 2026',
+      'href="https://x/seat"',
+    ]) {
       expect(text).toContain(part);
     }
   });

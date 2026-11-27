@@ -65,10 +65,22 @@ export interface OpenedRow {
   row: string;
   free: number;
   middleFree: number;
+  /** Free seat numbers in the row, in drawn order */
+  seats?: string[];
 }
 
+const MAX_LISTED = 8;
+const seatList = (r: OpenedRow) => {
+  const s = r.seats ?? [];
+  if (!s.length) return `${r.free} free`;
+  const shown = s.slice(0, MAX_LISTED).map(escapeHtml).join(', ');
+  return s.length > MAX_LISTED ? `${shown} … (${s.length} free)` : shown;
+};
+
 const openedLine = (rows: OpenedRow[]) =>
-  `🔓 Rows opened: ${rows.map((r) => `<b>${escapeHtml(r.row)}</b> ${r.free} free${r.middleFree ? ` (${r.middleFree} middle)` : ''}`).join(', ')}`;
+  `🔓 Rows opened: ${rows
+    .map((r) => `<b>${escapeHtml(r.row)}</b> ${seatList(r)}${r.middleFree ? ` — ${r.middleFree} middle` : ''}`)
+    .join(' · ')}`;
 
 /** 🔓 alert: rows that had no free seats at the last check now have some. */
 export function formatRowsOpened(a: AlertShow, seats: SeatSummary, rows: OpenedRow[], venueName: string, link: string): string {
