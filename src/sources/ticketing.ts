@@ -372,6 +372,12 @@ export class TicketingSource implements ShowSource {
         throw new SeatMapUnavailable(`seat map did not load for session ${show.sessionId}`);
       }
 
+      // The site sometimes never finishes loading a show's seats.
+      const loading = page.getByText('Please wait, while we load the seats', { exact: false }).first();
+      if (await loading.isVisible().catch(() => false)) {
+        const cleared = await loading.waitFor({ state: 'hidden', timeout: 12_000 }).then(() => true, () => false);
+        if (!cleared) throw new SeatMapUnavailable('the site is still loading seats for this show');
+      }
       await this.dismissQuantityPopup(page);
       if (onMapReady) await onMapReady(page);
 
@@ -379,8 +385,19 @@ export class TicketingSource implements ShowSource {
       const qty = page.locator('select[aria-label="Select number of tickets, required"]');
       const catSel = page.locator('select[aria-label="Select seat category"]');
       const rowSel = page.locator('select[aria-label="Select row"]');
-      await qty.waitFor({ state: 'visible', timeout: t });
-      await qty.selectOption('1');
+      try {
+        await qty.waitFor({ state: 'visible', timeout: t });
+      } catch {
+        // Usually the site is still (or again) loading this show's seats.
+        const stillLoading = await page.getByText('Please wait, while we load the seats', { exact: false }).first().isVisible().catch(() => false);
+        throw new SeatMapUnavailable(stillLoading ? 'the site is still loading seats for this show' : 'seat dialog did not open');
+      }
+      const quantities = await qty.evaluate((el) => [...(el as HTMLSelectElement).options].map((o) => o.value));
+      if (!quantities.includes('1')) {
+        // Nothing on sale (every class sold out on the seat page): a valid "0 free" result.
+        return { source: this.name, venue: show.venue, date: show.date, sessionId: show.sessionId, screen: show.screen, checkedAt: new Date().toISOString(), rows: [] };
+      }
+      await qty.selectOption('1', { timeout: 8_000 });
 
       const optionsOf = (loc: typeof catSel) =>
         loc.evaluate((el) =>
@@ -388,7 +405,11 @@ export class TicketingSource implements ShowSource {
         );
 
       const rows: SeatRow[] = [];
-      await catSel.waitFor({ state: 'visible', timeout: t });
+      try {
+        await catSel.waitFor({ state: 'visible', timeout: 12_000 });
+      } catch {
+        throw new SeatMapUnavailable('seat classes did not load (the site is likely still loading seats)');
+      }
       for (const cat of await optionsOf(catSel)) {
         await catSel.selectOption(cat.value);
         const [catName = cat.text, price = ''] = cat.text.split(/\s+-\s+₹/);
@@ -449,8 +470,13 @@ export class TicketingSource implements ShowSource {
     const confirm = page.getByText('Select Seats', { exact: true }).first();
     const shown = await confirm.waitFor({ state: 'visible', timeout: waitMs }).then(() => true, () => false);
     if (!shown) return;
-    await confirm.click({ timeout: 5_000 }).catch(() => confirm.click({ timeout: 5_000, force: true }));
-    await confirm.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    // Best effort: something (a tooltip or offer banner) can sit on top of the button.
+    const ok = await confirm
+      .click({ timeout: 4_000 })
+      .then(() => true)
+      .catch(() => confirm.click({ timeout: 3_000, force: true }).then(() => true, () => false));
+    if (!ok) await page.keyboard.press('Escape').catch(() => {});
+    await confirm.waitFor({ state: 'hidden', timeout: 4_000 }).catch(() => {});
     await page.waitForTimeout(300);
   }
 

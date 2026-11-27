@@ -33,6 +33,8 @@ interface Ctx {
   seatChecked: Map<string, number>;
   /** Shows the fast loop is currently covering (skipped by the regular seat checks) */
   hot: Set<string>;
+  /** Fast-loop shows resting after the site failed to load their seats (key → until ms) */
+  hotRest: Map<string, number>;
   /** All loops stay quiet until this time after a bot-check block */
   pausedUntil: number;
   /** Live (uncached) showtimes are off until this time after a rate limit; cached polling continues */
@@ -129,6 +131,7 @@ async function checkSeats(ctx: Ctx, show: Show, slot: 'seat' | 'hot' = 'seat'): 
   } catch (err) {
     if (err instanceof SeatMapUnavailable) {
       log.warn(`seats ${venue.code} ${show.date} ${show.time} ${show.screen} (${show.sessionId}) skipped: ${err.message}`);
+      if (slot === 'hot') ctx.hotRest.set(showKey(show), Date.now() + 3 * 60_000);
       return;
     }
     throw err;
@@ -305,6 +308,7 @@ async function hotLoop(ctx: Ctx): Promise<void> {
     const started = Date.now();
     for (const show of shows) {
       if (stop.signal.aborted || Date.now() < ctx.pausedUntil) break;
+      if ((ctx.hotRest.get(showKey(show)) ?? 0) > Date.now()) continue;
       try {
         await checkSeats(ctx, show, 'hot');
       } catch (err) {
@@ -352,6 +356,7 @@ async function main() {
     seatChecked: new Map(),
     venueByCode: new Map(cfg.venues.map((v) => [v.code, v])),
     hot: new Set(),
+    hotRest: new Map(),
     pausedUntil: 0,
     liveBlockedUntil: Number((await store.get('fdfs:live-blocked-until')) ?? 0),
     showtimesPausedUntil: Number((await store.get('fdfs:showtimes-paused-until')) ?? 0),
@@ -455,7 +460,11 @@ async function main() {
       }
       consecutiveErrors++;
       log.error(`${label}: ${(err as Error).stack ?? err}`);
-      await live.setStatus('error', `${label}: ${(err as Error).message}`);
+      // One failed seat read isn't the watcher being down: only flag the status
+      // when showtimes fail or errors keep coming.
+      if (!label.startsWith('seats') || consecutiveErrors >= 3) {
+        await live.setStatus('error', `${label}: ${(err as Error).message.split('\n')[0]}`);
+      }
       if (consecutiveErrors >= 5) {
         log.warn('5 consecutive errors, recovering source');
         await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
