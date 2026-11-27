@@ -20,6 +20,8 @@ export interface PollConfig {
   liveDates: string[];
   /** Hard cap on showtimes requests per minute (all venues and dates together) */
   requestsPerMinute: number;
+  /** Share of the budget reserved for priority combos (0–1) */
+  priorityShare: number;
 }
 
 export interface SeatConfig {
@@ -154,6 +156,7 @@ const DEFAULT_POLL: PollConfig = {
   concurrency: 1,
   liveDates: [],
   requestsPerMinute: 4,
+  priorityShare: 0.75,
 };
 
 /** Accepts "20261217" or "2026-12-17". */
@@ -198,6 +201,7 @@ export function parseConfig(raw: unknown): WatchConfig {
   };
   if (poll.minSeconds > poll.maxSeconds) throw new Error('poll.minSeconds must be <= poll.maxSeconds');
   if (!(poll.concurrency >= 1 && poll.concurrency <= 6)) throw new Error('poll.concurrency must be 1–6');
+  if (!(poll.priorityShare >= 0 && poll.priorityShare <= 1)) throw new Error('poll.priorityShare must be 0–1');
   if (!(poll.requestsPerMinute > 0 && poll.requestsPerMinute <= 6)) {
     throw new Error('poll.requestsPerMinute must be between 0 and 6 (the site locks you out for an hour above ~6/min)');
   }

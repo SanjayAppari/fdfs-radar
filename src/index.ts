@@ -496,6 +496,8 @@ async function main() {
     // Every request is live (the site's limiter counts cached ones too). Each slot
     // goes to the venue × date that is most overdue, priority dates weighted ×4.
     const lastFetched = new Map<string, number>();
+    let priSent = 0;
+    let restSent = 0;
     let sent = 0;
     let summaryAt = Date.now();
     while (!stop.signal.aborted) {
@@ -515,14 +517,17 @@ async function main() {
       const priority = new Set(cfg.poll.liveDates.length ? cfg.poll.liveDates : upcoming.slice(0, 2));
       const isPriority = (c: { venue: VenueConfig; date: string }) => priority.has(c.date) || priority.has(`${c.venue.code}:${c.date}`);
       const combos = upcoming.flatMap((date) => cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date })));
-      const now = Date.now();
-      const pick = combos
-        .map((c) => {
-          const k = `${c.venue.code}:${c.date}`;
-          const age = now - (lastFetched.get(k) ?? 0);
-          return { ...c, k, score: age * (isPriority(c) ? 4 : 1) };
-        })
-        .sort((a, b) => b.score - a.score)[0]!;
+      // Priority combos get a fixed share of the budget (poll.priorityShare);
+      // within each group the most overdue combo goes next.
+      const pri = combos.filter(isPriority);
+      const rest = combos.filter((c) => !isPriority(c));
+      const usePriority = pri.length > 0 && (rest.length === 0 || priSent < (priSent + restSent + 1) * cfg.poll.priorityShare);
+      const group = usePriority ? pri : rest;
+      const pick = group
+        .map((c) => ({ ...c, k: `${c.venue.code}:${c.date}`, age: Date.now() - (lastFetched.get(`${c.venue.code}:${c.date}`) ?? 0) }))
+        .sort((a, b) => b.age - a.age)[0]!;
+      if (usePriority) priSent++;
+      else restSent++;
 
       await budget.take(stop.signal);
       if (stop.signal.aborted) break;
@@ -544,7 +549,6 @@ async function main() {
         break;
       }
       if (Date.now() - summaryAt >= 60_000) {
-        const pri = combos.filter(isPriority);
         const oldest = (list: typeof combos) =>
           Math.round(Math.max(0, ...list.map((c) => Date.now() - (lastFetched.get(`${c.venue.code}:${c.date}`) ?? Date.now()))) / 1000);
         log.info(

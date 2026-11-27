@@ -145,8 +145,12 @@
     "reloadEveryMinutes": 45,
     "blockedBackoffMinMinutes": 5,
     "blockedBackoffMaxMinutes": 10,
-    "liveDates": [],
-    "requestsPerMinute": 4
+    "liveDates": [
+      "ALUC:20261217",
+      "AMBH:20261217"
+    ],
+    "requestsPerMinute": 4,
+    "priorityShare": 0.75
   },
   "seats": {
     "enabled": true,
@@ -166,9 +170,14 @@
     "fast": {
       "enabled": true,
       "maxShows": 4,
-      "intervalSeconds": 20,
-      "venues": [],
-      "dates": [],
+      "intervalSeconds": 10,
+      "venues": [
+        "ALUC",
+        "AMBH"
+      ],
+      "dates": [
+        "20261217"
+      ],
       "formats": []
     }
   }

@@ -109,12 +109,13 @@ a time, shared through Redis (restarts and `npm run once` wait their turn),
 at half speed for 10 minutes after start or after a lockout, and holding off
 early if the site ever sends rate-limit headers. Every request fetches live data. Each slot goes to the venue × date
 that is most overdue; `poll.liveDates` entries (`"20261217"` or
-`"AMBH:20261217"`) are weighted ×4. On a 429 the budget halves (saved for 7
+`"AMBH:20261217"`) get a reserved share of the budget, `poll.priorityShare`
+(default 75%). On a 429 the budget halves (saved for 7
 days), showtime requests stop until the site's deadline, and seat checks
 carry on. The layout capture never calls the showtimes API.
 
-Refresh time ≈ (number of combos ÷ budget) — e.g. 3 priority combos at 4/min
-≈ every 60 s; 10 priority combos ≈ every 3 min.
+Refresh time ≈ priority combos ÷ (budget × share) — e.g. 2 priority combos at
+4/min × 75% ≈ every 40 s; everything else shares the remaining 1/min.
 
 The old single-venue format (`venue`, `venueSlug`,
 `venueName`, `seats.screens`) still loads.
