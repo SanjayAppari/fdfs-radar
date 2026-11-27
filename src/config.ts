@@ -65,6 +65,8 @@ export interface VenueConfig {
   dates: string[];
   /** Movie keywords for this venue; defaults to the top-level movies */
   movies: string[];
+  /** Only shows whose screen/format/attributes match one of these (e.g. ["PXL"]); empty = all */
+  formats: string[];
   /** Per-screen layout hints, keyed by screen name as shown, e.g. "SCREEN 6" */
   screens: Record<string, ScreenOverride>;
 }
@@ -209,6 +211,7 @@ export function parseConfig(raw: unknown): WatchConfig {
       slug: requiredString(v.slug, `venues[${i}].slug`),
       dates,
       movies: v.movies !== undefined ? strings(v.movies, `venues[${i}].movies`) : topMovies,
+      formats: strings(v.formats, `venues[${i}].formats`),
       screens: parseScreens(v.screens),
     };
   });

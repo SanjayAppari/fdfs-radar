@@ -45,16 +45,16 @@ async function main() {
       if (onlyVenue && venue.code !== onlyVenue) continue;
 
       // Find one show per screen across every open date (any movie), preferring bookable ones.
-      const first = await source.fetchDate(venue, todayIST());
+      const first = await source.fetchDate(venue, todayIST(), false); // cached: never spend the live rate limit here
       const dates = first.openDates ?? [todayIST()];
       const pick = new Map<string, Show>();
       for (const date of dates) {
-        const snap = date === first.date ? first : await source.fetchDate(venue, date);
+        const snap = date === first.date ? first : await source.fetchDate(venue, date, false);
         for (const s of snap.shows) {
           const cur = pick.get(s.screen);
           if (!cur || (cur.availStatus === '0' && s.availStatus !== '0')) pick.set(s.screen, s);
         }
-        await sleep(1_200);
+        await sleep(2_500);
       }
       log.info(`${venue.code}: screens ${[...pick.keys()].sort().join(', ')}`);
 

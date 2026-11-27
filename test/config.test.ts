@@ -32,7 +32,7 @@ describe('parseConfig', () => {
       seats: { screens: { 'SCREEN 4': { rows: 'N-A' } } },
     });
     expect(cfg.venues).toEqual([
-      { name: 'Prasads Multiplex', code: 'PRHN', slug: 'prasads-multiplex-hyderabad', dates: ['20261217'], movies: [], screens: { 'SCREEN 4': { rows: 'N-A' } } },
+      { name: 'Prasads Multiplex', code: 'PRHN', slug: 'prasads-multiplex-hyderabad', dates: ['20261217'], movies: [], formats: [], screens: { 'SCREEN 4': { rows: 'N-A' } } },
     ]);
   });
 

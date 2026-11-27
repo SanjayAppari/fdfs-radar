@@ -61,8 +61,13 @@ const includesAny = (haystack: string, needles: string[]) => {
   return needles.some((n) => h.includes(n.toLowerCase()));
 };
 
-export const isWatchedMovie = (show: Show, cfg: Pick<WatchConfig, 'movies'>) =>
-  cfg.movies.length === 0 || includesAny(show.movie, cfg.movies);
+/**
+ * Watched = title matches `movies` (empty = all) and, when the venue sets
+ * `formats`, the screen/format/attributes match one of them (e.g. "PXL").
+ */
+export const isWatchedMovie = (show: Show, cfg: Pick<WatchConfig, 'movies'> & { formats?: string[] }) =>
+  (cfg.movies.length === 0 || includesAny(show.movie, cfg.movies)) &&
+  (!cfg.formats?.length || includesAny(`${show.screen} ${show.dimension} ${show.attributes}`, cfg.formats));
 
 export const isPriority = (show: Show, cfg: Pick<WatchConfig, 'priorityFormats'>) =>
   cfg.priorityFormats.length > 0 && includesAny(`${show.attributes} ${show.dimension}`, cfg.priorityFormats);
@@ -89,7 +94,7 @@ function parseRecord(raw: string | null): ShowRecord | null {
 export async function diffSnapshot(
   store: KV,
   snap: DateSnapshot,
-  cfg: Pick<WatchConfig, 'movies' | 'priorityFormats'>,
+  cfg: Pick<WatchConfig, 'movies' | 'priorityFormats'> & { formats?: string[] },
 ): Promise<DiffResult> {
   const k = keys(snap.source, snap.venue);
   const { date } = snap;
@@ -166,7 +171,8 @@ export async function diffSnapshot(
         });
         dedupeKeys.push({ key: newKeys[i]!, ttl: DEDUPE_TTL });
       }
-    } else if (prev.availStatus !== '1' && show.availStatus === '1') {
+    } else if (prev.availStatus === '0' && show.availStatus !== '0') {
+      // Became bookable (the site uses 1, 2 and 3 for bookable states)
       if (availAlerted[i] === null) {
         alerts.push({ kind: 'avail_up', date, item: wrap(show) });
         dedupeKeys.push({ key: availKeys[i]!, ttl: AVAIL_DEDUPE_TTL });

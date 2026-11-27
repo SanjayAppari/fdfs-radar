@@ -507,7 +507,7 @@
     const s = snap?.shows.find((x) => showKey(x) === k);
     if (!s) return;
     const cats = s.categories?.length
-      ? `<table class="cats"><thead><tr><th>Class</th><th>Price</th><th>Status</th></tr></thead><tbody>${s.categories.map((c) => `<tr><td>${esc(c.name)}</td><td>₹${esc(c.price)}</td><td>${c.availStatus === '1' ? '<span class="tag open">available</span>' : '<span class="tag closed">not available</span>'}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="cats"><thead><tr><th>Class</th><th>Price</th><th>Status</th></tr></thead><tbody>${s.categories.map((c) => `<tr><td>${esc(c.name)}</td><td>₹${esc(c.price)}</td><td>${c.availStatus !== '0' ? '<span class="tag open">available</span>' : '<span class="tag closed">not available</span>'}</td></tr>`).join('')}</tbody></table>`
       : '';
     openDrawer(`${s.time} · ${s.screen}`, `
       <dl class="kv">

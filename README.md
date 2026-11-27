@@ -1,7 +1,7 @@
 # FDFS Radar
 
 Watches showtimes at your chosen Hyderabad cinemas (Prasads Multiplex, AMB
-Cinemas, ALLU Cinemas, …) for the dates you care about and pings you on
+Cinemas, ALLU Cinemas, PVR Lakeshore PXL, ART Cinemas, …) for the dates you care about and pings you on
 Telegram when:
 
 - a watched **date opens** for booking (one summary message),
@@ -87,7 +87,9 @@ message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy
       "screens": { "SCREEN 6": { "rows": "A-N" }, "SCREEN 4": { "rows": "N-A" } }
     },
     { "name": "AMB Cinemas", "code": "AMBH", "slug": "amb-cinemas-gachibowli",
-      "dates": ["20261219"], "movies": ["Dune"] }   // optional per-venue overrides
+      "dates": ["20261219"], "movies": ["Dune"] },  // optional per-venue overrides
+    { "name": "PVR Lakeshore", "code": "ILKS", "slug": "pvr-lakeshore-pxl-4k-laser-atmos-dts-x-y-junction",
+      "formats": ["PXL"] }                          // only shows on the PXL screen
   ],
   "dates": ["20261217", "2026-12-18"],    // YYYYMMDD or YYYY-MM-DD; past dates are skipped
   "movies": ["Avengers", "Dune"],         // case-insensitive keyword on the movie title; [] = all

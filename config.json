@@ -93,6 +93,31 @@
           "leftToRight": "asc"
         }
       }
+    },
+    {
+      "name": "PVR Lakeshore",
+      "code": "ILKS",
+      "slug": "pvr-lakeshore-pxl-4k-laser-atmos-dts-x-y-junction",
+      "formats": [
+        "PXL"
+      ],
+      "screens": {
+        "PXL AUDI 6": {
+          "rows": "A-H,J-N,P-Q",
+          "leftToRight": "asc"
+        }
+      }
+    },
+    {
+      "name": "ART Cinemas",
+      "code": "ACEV",
+      "slug": "art-cinemas-vanasthalipuram",
+      "screens": {
+        "SCREEN 6 EPIQ": {
+          "rows": "A-H,J-M,R",
+          "leftToRight": "desc"
+        }
+      }
     }
   ],
   "dates": [
@@ -113,11 +138,13 @@
     "Dolby",
     "4DX",
     "Barco",
-    "Laser"
+    "Laser",
+    "PXL",
+    "EPIQ"
   ],
   "poll": {
-    "minSeconds": 20,
-    "maxSeconds": 30,
+    "minSeconds": 25,
+    "maxSeconds": 35,
     "reloadEveryMinutes": 45,
     "blockedBackoffMinMinutes": 5,
     "blockedBackoffMaxMinutes": 10,

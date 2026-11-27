@@ -44,7 +44,7 @@ async function pollDate(ctx: Ctx, venue: VenueConfig, date: string, fresh = true
   const { cfg, source, store, notifier, live } = ctx;
   const snap = await source.fetchDate(venue, date, fresh);
   ctx.latest.set(`${venue.code}:${date}`, snap);
-  const watchCfg = { movies: venue.movies, priorityFormats: cfg.priorityFormats };
+  const watchCfg = { movies: venue.movies, formats: venue.formats, priorityFormats: cfg.priorityFormats };
   const result = await diffSnapshot(store, snap, watchCfg);
   const link = source.bookingUrl(venue, date);
   const watchedCount = snap.shows.filter((s) => isWatchedMovie(s, venue)).length;

@@ -7,8 +7,9 @@ const MAX_LEN = 3900; // Telegram hard limit is 4096
 
 export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** "0" = not bookable; "1" available; "2" filling fast; other non-zero values are also bookable. */
 export const statusLabel = (avail: string) =>
-  avail === '1' ? '✅ Available' : avail === '0' ? '⛔ Not available yet' : `Status ${escapeHtml(avail)}`;
+  avail === '0' ? '⛔ Not available yet' : avail === '2' ? '🟠 Filling fast' : '✅ Available';
 
 function screenLine(a: AlertShow): string {
   const { screen, attributes } = a.show;
@@ -51,7 +52,7 @@ export function formatAlert(alert: Alert, venueName: string, link: string): stri
         const s0 = items[0]!.show;
         const lines = items.map(
           (a) =>
-            `  ${a.priority ? '🔥' : '•'} ${escapeHtml(a.show.time)} · ${screenLine(a)} · ${a.show.availStatus === '1' ? '✅' : '⛔'}`,
+            `  ${a.priority ? '🔥' : '•'} ${escapeHtml(a.show.time)} · ${screenLine(a)} · ${a.show.availStatus !== '0' ? '✅' : '⛔'}`,
         );
         return `🎬 <b>${escapeHtml(s0.movie)}</b>\n🎞 ${escapeHtml(s0.eventName)}${s0.dimension ? ` — <i>${escapeHtml(s0.dimension)}</i>` : ''}\n${lines.join('\n')}`;
       });
