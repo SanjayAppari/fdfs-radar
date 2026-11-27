@@ -147,7 +147,9 @@
     "blockedBackoffMaxMinutes": 10,
     "liveDates": [
       "ALUC:20261217",
-      "AMBH:20261217"
+      "ALUC:20261218",
+      "AMBH:20261217",
+      "AMBH:20261218"
     ],
     "requestsPerMinute": 4,
     "priorityShare": 0.75
@@ -169,14 +171,15 @@
     "alertCooldownMinutes": 10,
     "fast": {
       "enabled": true,
-      "maxShows": 4,
-      "intervalSeconds": 10,
+      "maxShows": 6,
+      "intervalSeconds": 20,
       "venues": [
         "ALUC",
         "AMBH"
       ],
       "dates": [
-        "20261217"
+        "20261217",
+        "20261218"
       ],
       "formats": []
     }
