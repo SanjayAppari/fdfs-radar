@@ -156,6 +156,22 @@ add `rows` for any screen you know.
 
 Results are stored in `fdfs:<source>:<venue>:seats:<date>:<SessionId>`.
 
+### Hall templates (exact seat-map drawing)
+
+`layouts.json` holds every screen's real geometry — which column each seat
+sits in, aisles, and gap rows — so the dashboard draws seat maps exactly like
+the site. It was captured from the site's own seat maps for all 18 screens.
+Re-capture after a hall changes or when adding a venue (uses its own browser
+profile, safe to run alongside the watcher):
+
+```bash
+npm run capture-layouts                     # every screen at every venue
+npm run capture-layouts -- AMBH "SCREEN 2"  # one screen
+```
+
+Each screen needs `rows` (and ideally `leftToRight`) in `config.json` first.
+Wide halls are captured by zooming out and panning across the map.
+
 ## Dashboard
 
 A local, read-only web UI at **http://127.0.0.1:4317** (localhost only):

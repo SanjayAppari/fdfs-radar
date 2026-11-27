@@ -190,6 +190,10 @@
   .st.m { background: var(--ok); }
   .hrow .full { height: 6px; flex: 1; min-width: 120px; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--border) 0 9px, transparent 9px 11px); opacity: .8; }
   .hrow.good { background: color-mix(in srgb, var(--ok) 6%, transparent); border-radius: 4px; }
+  .hallgrid { display: grid; gap: 2px; justify-content: center; align-items: center; }
+  .hallgrid .lbl { font: 600 10px/1 var(--mono); color: var(--muted); text-align: center; }
+  .hallgrid .lbl.good { color: var(--ok); }
+  .hallgrid .st { width: 100%; height: auto; aspect-ratio: 1; flex: none; }
   .screenbar { margin: 10px auto 0; width: 70%; height: 5px; border-radius: 0 0 50% 50%; background: color-mix(in srgb, var(--accent) 55%, transparent); }
   .screenlbl { text-align: center; font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: .1em; }
   .note { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
@@ -292,6 +296,7 @@
     status: null,
     snapshots: [],
     seats: {},
+    layouts: {},
     alerts: [],
     prevMiddle: new Map(),
     selectedDate: store.get('date', null),
@@ -522,6 +527,8 @@
     if (!r) return s.availStatus === '0' ? '' : '<div class="meta" style="margin-bottom:12px">Seat map not checked yet — it is read every few minutes.</div>';
     const byRow = new Map(r.rows.map((x) => [x.row, x]));
     const good = new Set(r.goodRows);
+    const tpl = state.layouts[`${s.venue}:${s.screen}`.toUpperCase()];
+    if (tpl) return templateHall(s, r, tpl, byRow, good);
     const rowsBackToFront = [...r.hallRows].reverse();
     const lines = rowsBackToFront.map((row) => {
       const x = byRow.get(row);
@@ -538,6 +545,28 @@
         ? `<div class="note">Hall direction read from the site's seat map; rows ${esc(r.hallRows[0] || '')} (screen) → ${esc(r.hallRows[r.hallRows.length - 1] || '')} (back).</div>`
         : '';
     return `<div class="meta" style="margin-bottom:4px">Seats as seen facing the screen (screen at the bottom; filled = free middle seat, outlined = other free seat)</div><div class="hall">${lines}<div class="screenbar"></div><div class="screenlbl">SCREEN</div></div>${note}${summary}`;
+  };
+
+  /** Draw the hall exactly like the site: same columns, aisles and gap rows. */
+  const templateHall = (s, r, tpl, byRow, good) => {
+    const seatSize = Math.max(6, Math.min(12, Math.floor(500 / (tpl.cols + 4))));
+    const cells = [];
+    for (const tr of tpl.rows) {
+      const live = byRow.get(tr.row);
+      const stateOf = new Map((live?.seats || []).map((x) => [x.n, x]));
+      const line = tr.line + 1;
+      cells.push(`<span class="lbl ${good.has(tr.row) ? 'good' : ''}" style="grid-row:${line};grid-column:1">${esc(tr.row)}</span>`);
+      for (const seat of tr.seats) {
+        const x = stateOf.get(seat.n);
+        const cls = x && x.free ? (x.middle ? 'm' : 'f') : '';
+        const tip = `${tr.row}${seat.n}${x && x.free ? (x.middle ? ' · middle, free' : ' · free') : ' · booked'}`;
+        cells.push(`<span class="st ${cls}" style="grid-row:${line};grid-column:${seat.col + 2}" title="${esc(tip)}"></span>`);
+      }
+      cells.push(`<span class="lbl ${good.has(tr.row) ? 'good' : ''}" style="grid-row:${line};grid-column:${tpl.cols + 2}">${live ? live.free : 0}</span>`);
+    }
+    const grid = `<div class="hallgrid" style="grid-template-columns:14px repeat(${tpl.cols}, ${seatSize}px) 18px;grid-template-rows:repeat(${tpl.lines}, ${seatSize}px)">${cells.join('')}</div>`;
+    const summary = `<dl class="kv"><dt>Free seats</dt><dd>${r.totalFree}</dd><dt>Middle free</dt><dd>${r.middleFree} (best block of ${r.bestBlock} together)</dd><dt>Middle rows</dt><dd>${esc(r.goodRows.join(' ') || '—')}</dd><dt>Checked</dt><dd><span data-ago="${esc(r.checkedAt)}">${ago(r.checkedAt)}</span></dd></dl>`;
+    return `<div class="meta" style="margin-bottom:4px">Seats exactly as on the site's map (screen at the bottom; filled = free middle seat, outlined = other free seat)</div><div class="hall">${grid}<div class="screenbar"></div><div class="screenlbl">SCREEN</div></div>${summary}`;
   };
 
   // ---------- drawer ----------
@@ -653,6 +682,7 @@
     state.status = data.status;
     state.snapshots = data.snapshots;
     state.seats = data.seats || {};
+    state.layouts = data.layouts || {};
     state.alerts = data.alerts;
     renderStatus(); renderShows(); renderAlerts();
   };

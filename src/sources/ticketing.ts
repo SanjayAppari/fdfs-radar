@@ -1,5 +1,7 @@
 import type { BrowserContext, Page } from 'playwright';
 import { log } from '../log.js';
+import { mergeGeometry } from '../layouts.js';
+import { detectSeatBoxes, type DetectedGeometry } from './seat-geometry.js';
 import { todayIST } from '../time.js';
 import {
   BlockedError,
@@ -111,6 +113,7 @@ export interface TicketingSourceOptions {
   channel?: string;
   reloadEveryMs: number;
   fetchTimeoutMs?: number;
+  viewport?: { width: number; height: number };
 }
 
 interface PageFetchResult {
@@ -139,7 +142,7 @@ export class TicketingSource implements ShowSource {
     this.context = await chromium.launchPersistentContext(this.opts.userDataDir, {
       headless: this.opts.headless,
       channel: this.opts.channel || undefined,
-      viewport: { width: 1280, height: 860 },
+      viewport: this.opts.viewport ?? { width: 1280, height: 860 },
       locale: 'en-IN',
       timezoneId: 'Asia/Kolkata',
       args: ['--disable-blink-features=AutomationControlled'],
@@ -233,7 +236,54 @@ export class TicketingSource implements ShowSource {
    * selection dialog (the visual map is a canvas). Read-only: it picks
    * "1 ticket" to list seats but never selects or holds a seat.
    */
-  async fetchSeatMap(show: Show): Promise<SeatMap> {
+  fetchSeatMap(show: Show): Promise<SeatMap> {
+    return this.readSeatMap(show);
+  }
+
+  /**
+   * Seat map plus the drawn geometry (seat box positions on the canvas), used
+   * to capture hall templates for the dashboard.
+   */
+  async captureLayout(show: Show): Promise<{ map: SeatMap; geometry: DetectedGeometry }> {
+    let geometry: DetectedGeometry = { error: 'not captured', size: 0, lines: [] };
+    const map = await this.readSeatMap(show, async (page) => {
+      await page.waitForTimeout(1_500); // let the canvas finish drawing
+      geometry = await page.evaluate(detectSeatBoxes);
+      // Wide halls overflow the fixed-size drawing area: zoom out until nothing touches the edge.
+      const zoomOut = page.locator('div:has(> svg use[href*="icon-zoom-out"])').first();
+      for (let i = 0; i < 5 && geometry.clipped; i++) {
+        await zoomOut.click({ timeout: 5_000 }).catch(() => {});
+        await page.waitForTimeout(900);
+        geometry = await page.evaluate(detectSeatBoxes);
+      }
+      // Still too wide: pan across and merge passes until nothing new appears.
+      const cv = await page.evaluate(() => {
+        const c = [...document.querySelectorAll('canvas')].sort((x, y) => y.width * y.height - x.width * x.height)[0]!;
+        const r = c.getBoundingClientRect();
+        return { x: r.left, y: r.top, w: r.width, h: r.height, scale: c.width / r.width };
+      });
+      for (const dir of [-1, 1]) {
+        for (let i = 0; i < 4 && geometry.clipped; i++) {
+          const before = geometry.lines.reduce((n, l) => n + l.xs.length, 0);
+          const cx = cv.x + cv.w / 2;
+          const cy = cv.y + cv.h / 2;
+          await page.mouse.move(cx, cy);
+          await page.mouse.down();
+          await page.mouse.move(cx + dir * cv.w * 0.35, cy, { steps: 12 });
+          await page.mouse.up();
+          await page.waitForTimeout(900);
+          const next = await page.evaluate(detectSeatBoxes);
+          // Content moved by dir*0.35*w css px, so b → a is the opposite shift, in canvas px.
+          geometry = { ...mergeGeometry(geometry, next, -dir * cv.w * 0.35 * cv.scale), clipped: next.clipped };
+          if (geometry.lines.reduce((n, l) => n + l.xs.length, 0) === before) break; // reached the edge
+        }
+      }
+      geometry = { ...geometry, clipped: false };
+    });
+    return { map, geometry };
+  }
+
+  private async readSeatMap(show: Show, onMapReady?: (page: Page) => Promise<void>): Promise<SeatMap> {
     await this.ensurePage();
     if (!this.seatPage || this.seatPage.isClosed()) this.seatPage = await this.context!.newPage();
     const page = this.seatPage;
@@ -272,11 +322,12 @@ export class TicketingSource implements ShowSource {
       // Quantity pop-up overlays the page on first load.
       const qtyConfirm = page.getByText('Select Seats', { exact: true }).first();
       if (await qtyConfirm.isVisible().catch(() => false)) {
-        await qtyConfirm.click({ timeout: t });
+        await this.clickThrough(page, qtyConfirm);
         await page.waitForTimeout(800);
       }
+      if (onMapReady) await onMapReady(page);
 
-      await a11yBtn.click({ timeout: t });
+      await this.clickThrough(page, a11yBtn);
       const qty = page.locator('select[aria-label="Select number of tickets, required"]');
       const catSel = page.locator('select[aria-label="Select seat category"]');
       const rowSel = page.locator('select[aria-label="Select row"]');
@@ -339,6 +390,17 @@ export class TicketingSource implements ShowSource {
     } finally {
       // Leave the seat page so it doesn't keep polling in the background.
       await page.goto('about:blank').catch(() => {});
+    }
+  }
+
+  /** Click, and if a tooltip/overlay intercepts it, dismiss with Escape and force the click. */
+  private async clickThrough(page: Page, target: ReturnType<Page['locator']>): Promise<void> {
+    try {
+      await target.click({ timeout: 8_000 });
+    } catch {
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(500);
+      await target.click({ timeout: 8_000, force: true });
     }
   }
 

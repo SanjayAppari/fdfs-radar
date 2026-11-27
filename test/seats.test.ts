@@ -169,3 +169,23 @@ describe('seat direction', () => {
     expect(seatDirection([{ n: '5' }])).toBeNull();
   });
 });
+
+describe('pan merge', () => {
+  it('stitches two passes by the free/sold pattern, not the nearest grid match', async () => {
+    const { mergeGeometry } = await import('../src/layouts.js');
+    const step = 38;
+    const all = Array.from({ length: 47 }, (_, i) => 100 + i * step);
+    const kinds = all.map((_, i) => ([2, 3, 7, 11, 12, 19, 23, 30, 31, 40].includes(i) ? 'f' : 's'));
+    const pick = (keep: (x: number) => boolean, shift = 0) => {
+      const idx = all.map((x, i) => i).filter((i) => keep(all[i]! + shift));
+      return { y: 10, xs: idx.map((i) => all[i]! + shift), kinds: idx.map((i) => kinds[i]).join('') };
+    };
+    const a = { size: 32, lines: [pick((x) => x < 1600)] };
+    const shift = -11 * step;
+    const b = { size: 32, lines: [pick((x) => x > 0 && x < 1600, shift)] };
+    // Expected distance deliberately off by ~1 seat: the pattern still finds the right shift.
+    const m = mergeGeometry(a, b, -shift + 30);
+    expect(m.lines[0]!.xs).toEqual(all);
+    expect(m.lines[0]!.kinds).toBe(kinds.join(''));
+  });
+});

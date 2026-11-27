@@ -4,7 +4,8 @@
  * watcher's Redis pub/sub channel.
  */
 import 'dotenv/config';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Redis } from 'ioredis';
 import { ALERT_LOG_KEY, LIVE_CHANNEL, STATUS_KEY } from '../live.js';
@@ -14,6 +15,17 @@ const PORT = Number(process.env.DASHBOARD_PORT ?? 4317);
 const HOST = process.env.DASHBOARD_HOST ?? '127.0.0.1';
 const REDIS_URL = process.env.REDIS_URL?.trim() || 'redis://127.0.0.1:6379';
 const INDEX_HTML = new URL('../../web/index.html', import.meta.url);
+const LAYOUTS_PATH = resolve(process.env.LAYOUTS_PATH ?? 'layouts.json');
+let layoutsCache: { mtime: number; data: unknown } = { mtime: -1, data: {} };
+async function layouts(): Promise<unknown> {
+  try {
+    const m = (await stat(LAYOUTS_PATH)).mtimeMs;
+    if (m !== layoutsCache.mtime) layoutsCache = { mtime: m, data: JSON.parse(await readFile(LAYOUTS_PATH, 'utf8')) };
+  } catch {
+    layoutsCache = { mtime: -1, data: {} };
+  }
+  return layoutsCache.data;
+}
 const MAX_KEYS = 2000;
 const PREVIEW_CHARS = 240;
 
@@ -144,6 +156,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       status: parseJSON(statusRaw),
       snapshots,
       seats,
+      layouts: await layouts(),
       alerts: alertsRaw.map(parseJSON),
       serverTime: new Date().toISOString(),
     });

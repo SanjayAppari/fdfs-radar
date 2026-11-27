@@ -3,7 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
-.browser-profile/
+.browser-profile*/
 logs/
 *.log
 .DS_Store

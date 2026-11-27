@@ -17,7 +17,8 @@
     "setup:browser": "playwright install chromium",
     "telegram:test": "tsx src/scripts/telegram-test.ts",
     "dashboard": "tsx src/web/server.ts",
-    "start:dashboard": "node dist/web/server.js"
+    "start:dashboard": "node dist/web/server.js",
+    "capture-layouts": "tsc -p tsconfig.json && node dist/scripts/capture-layouts.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
