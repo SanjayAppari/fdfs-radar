@@ -380,8 +380,10 @@ async function main() {
    * remembered in Redis, so the same mistake can't repeat.
    */
   const savedBudget = Number(await store.get('fdfs:poll-budget'));
-  const budget = new RequestBudget(Math.min(cfg.poll.requestsPerMinute, savedBudget > 0 ? savedBudget : Infinity));
-  log.info(`showtimes budget: ${budget.perMinute} requests/min`);
+  const budget = new RequestBudget(Math.min(cfg.poll.requestsPerMinute, savedBudget > 0 ? savedBudget : Infinity), store);
+  // Gentle start: half speed for 10 minutes (both lockouts came right after resuming).
+  budget.warmUp(10 * 60_000, Math.max(Date.now(), ctx.showtimesPausedUntil));
+  log.info(`showtimes budget: ${budget.perMinute} requests/min (half speed for the first 10 min)`);
 
   /**
    * Runs one unit of work. Returns false when blocked (the caller should drop
@@ -405,9 +407,10 @@ async function main() {
         const wait = (err.retryAfterSeconds ?? 600) * 1000;
         const until = Date.now() + wait;
         if (until > ctx.showtimesPausedUntil) {
-          // Even cached data is refused: the whole API is locked for this connection. Stop
-          // sending showtime requests until the site's deadline (more requests may extend it).
+          // The API is locked for this connection. Stop sending showtime requests
+          // until the site's deadline (more requests may extend it), then warm up slowly.
           ctx.showtimesPausedUntil = until;
+          budget.warmUp(10 * 60_000, until);
           await store.writeAll([{ key: 'fdfs:showtimes-paused-until', value: String(until), ttlSeconds: Math.ceil(wait / 1000) + 60 }]);
           log.warn(`showtimes locked (${label}); no showtime requests for ~${Math.round(wait / 60_000)} min`);
           await live.setStatus('error', `rate limited — showtimes paused ~${Math.round(wait / 60_000)} min; seat checks continue`);
@@ -526,6 +529,13 @@ async function main() {
       lastFetched.set(pick.k, Date.now());
       sent++;
       await step(`${pick.venue.code} ${pick.date}`, () => pollDate(ctx, pick.venue, pick.date, true));
+      // Early warning: if the site says few requests remain, back off before hitting zero.
+      const hint = (source as TicketingSource).lastRateHint ?? {};
+      if (hint.remaining !== undefined && hint.limit && hint.remaining <= Math.max(2, hint.limit * 0.2)) {
+        const holdMs = (hint.resetSeconds ?? hint.retryAfter ?? 60) * 1000;
+        budget.hold(Date.now() + holdMs);
+        log.warn(`site reports ${hint.remaining}/${hint.limit} requests left; holding showtimes ${Math.round(holdMs / 1000)}s`);
+      }
 
       if (once && sent >= combos.length) {
         if (cfg.seats.enabled && source.fetchSeatMap) {

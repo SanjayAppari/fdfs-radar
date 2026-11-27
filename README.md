@@ -104,15 +104,17 @@ message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy
 **Request budget (important).** The site rate-limits the showtimes API per
 connection — cached and uncached requests alike — and a breach costs a
 **1-hour lockout** (HTTP 429). So every showtimes request goes through one hard
-budget, `poll.requestsPerMinute` (default **5**, capped at 6), released one at
-a time. Every request fetches live data. Each slot goes to the venue × date
+budget, `poll.requestsPerMinute` (default **4**, capped at 6), released one at
+a time, shared through Redis (restarts and `npm run once` wait their turn),
+at half speed for 10 minutes after start or after a lockout, and holding off
+early if the site ever sends rate-limit headers. Every request fetches live data. Each slot goes to the venue × date
 that is most overdue; `poll.liveDates` entries (`"20261217"` or
 `"AMBH:20261217"`) are weighted ×4. On a 429 the budget halves (saved for 7
 days), showtime requests stop until the site's deadline, and seat checks
 carry on. The layout capture never calls the showtimes API.
 
-Refresh time ≈ (number of combos ÷ budget) — e.g. 3 priority combos at 5/min
-≈ every 45 s; 10 priority combos ≈ every 2.5 min.
+Refresh time ≈ (number of combos ÷ budget) — e.g. 3 priority combos at 4/min
+≈ every 60 s; 10 priority combos ≈ every 3 min.
 
 The old single-venue format (`venue`, `venueSlug`,
 `venueName`, `seats.screens`) still loads.

@@ -153,7 +153,7 @@ const DEFAULT_POLL: PollConfig = {
   reloadEveryMinutes: 45,
   concurrency: 1,
   liveDates: [],
-  requestsPerMinute: 5,
+  requestsPerMinute: 4,
 };
 
 /** Accepts "20261217" or "2026-12-17". */

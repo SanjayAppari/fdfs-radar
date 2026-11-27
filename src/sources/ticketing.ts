@@ -121,6 +121,9 @@ interface PageFetchResult {
   contentType: string;
   cache: string;
   retryAfter: string;
+  rlRemaining: string;
+  rlLimit: string;
+  rlReset: string;
   text: string;
 }
 
@@ -137,6 +140,8 @@ export class TicketingSource implements ShowSource {
   private reloading?: Promise<void>;
   /** Last cache status seen on the showtimes API (HIT/MISS/…), for diagnostics */
   lastCacheStatus = '';
+  /** Rate-limit hints from the last successful response, when the site sends them */
+  lastRateHint: { remaining?: number; limit?: number; resetSeconds?: number; retryAfter?: number } = {};
 
   constructor(private readonly opts: TicketingSourceOptions) {}
 
@@ -227,6 +232,9 @@ export class TicketingSource implements ShowSource {
             contentType: r.headers.get('content-type') ?? '',
             cache: r.headers.get('cf-cache-status') ?? '',
             retryAfter: r.headers.get('retry-after') ?? '',
+            rlRemaining: r.headers.get('x-ratelimit-remaining') ?? r.headers.get('ratelimit-remaining') ?? '',
+            rlLimit: r.headers.get('x-ratelimit-limit') ?? r.headers.get('ratelimit-limit') ?? '',
+            rlReset: r.headers.get('x-ratelimit-reset') ?? r.headers.get('ratelimit-reset') ?? '',
             text: await r.text(),
           };
         } finally {
@@ -237,6 +245,13 @@ export class TicketingSource implements ShowSource {
     );
 
     this.lastCacheStatus = res.cache;
+    const num = (v: string) => (v && Number.isFinite(Number(v)) ? Number(v) : undefined);
+    this.lastRateHint = {
+      remaining: num(res.rlRemaining),
+      limit: num(res.rlLimit),
+      resetSeconds: num(res.rlReset),
+      retryAfter: num(res.retryAfter),
+    };
     let json: unknown;
     try {
       json = JSON.parse(res.text);

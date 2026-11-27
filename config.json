@@ -146,7 +146,7 @@
     "blockedBackoffMinMinutes": 5,
     "blockedBackoffMaxMinutes": 10,
     "liveDates": [],
-    "requestsPerMinute": 5
+    "requestsPerMinute": 4
   },
   "seats": {
     "enabled": true,
