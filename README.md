@@ -144,10 +144,31 @@ sit in a middle row *and* in the central part of that row:
 | --- | --- | --- |
 | `middle.rowsFrom` / `rowsTo` | `0.3` / `0.85` | depth band, 0 = front row (A, nearest the screen), 1 = back row |
 | `middle.centerWidth` | `0.6` | central share of each row |
-| `alertMiddle` | `true` | 🎯 Telegram alert when a watched show turns green (once per 30 min per show) |
+| `alertMiddle` | `true` | 🎯 Telegram alert when a watched show turns green |
 | `middle.seatsTogether` | `1` | adjacent seats needed (set 2+ when booking for a group) |
 | `venues[].screens["SCREEN 6"].rows` | — | rows **from the screen to the back**: `"A-N"` (A at the screen) or `"N-A"` (N at the screen); `"A-H,J-N"` if a letter is skipped |
 | `venues[].screens[...].goodRows` | — | explicit list of rows you like; skips the depth band |
+
+#### Fast loop (rows released and refilled within seconds)
+
+A second loop, in its own browser tab, keeps re-reading a few **hot** shows —
+by default the 4 watched, bookable shows in priority formats on the earliest
+dates — about every `intervalSeconds` (20 s). The 🎯 alert goes out as soon as
+a change is seen. Hot shows are marked ⚡ on the dashboard and skipped by the
+regular seat checks. Pick exactly which shows are hot with filters:
+
+```jsonc
+"fast": { "enabled": true, "maxShows": 4, "intervalSeconds": 20,
+          "venues": ["ALUC"], "dates": ["20261218"], "formats": ["Infinity Vision"] }
+```
+
+More hot shows or a shorter interval = more requests from your connection and
+a higher chance of a Cloudflare challenge (both loops pause together on a block).
+
+| Alert setting | Default | Meaning |
+| --- | --- | --- |
+| `alertIncrease` | `4` | also alert when an already-green show gains this many middle seats (a row was released); `0` = off |
+| `alertCooldownMinutes` | `10` | repeat 🎯 alerts for the same show at most this often |
 
 The site only lists rows that still have free seats, so for screens without a
 `rows` entry the hall is **learned** (union of all rows seen, stored in

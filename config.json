@@ -132,6 +132,16 @@
       "rowsTo": 0.85,
       "centerWidth": 0.6,
       "seatsTogether": 1
+    },
+    "alertIncrease": 4,
+    "alertCooldownMinutes": 10,
+    "fast": {
+      "enabled": true,
+      "maxShows": 4,
+      "intervalSeconds": 20,
+      "venues": [],
+      "dates": [],
+      "formats": []
     }
   }
 }

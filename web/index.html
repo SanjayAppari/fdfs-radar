@@ -252,7 +252,7 @@
       <label><input type="checkbox" id="hotOnly" /> 🔥 Priority only</label>
     </div>
     <div class="stats" id="stats"></div>
-    <div class="legend"><span><i class="l-ok"></i>Middle seats free</span><span><i class="l-edge"></i>Front / side seats only</span><span><i class="l-off"></i>Sold out / not bookable</span><span><i class="l-pend"></i>Bookable, seats not checked yet</span></div>
+    <div class="legend"><span>⚡ Fast loop (checked every few seconds)</span><span><i class="l-ok"></i>Middle seats free</span><span><i class="l-edge"></i>Front / side seats only</span><span><i class="l-off"></i>Sold out / not bookable</span><span><i class="l-pend"></i>Bookable, seats not checked yet</span></div>
     <div id="movies"></div>
   </section>
 
@@ -494,7 +494,8 @@
                 : st === 'pending' ? 'checking seats…'
                 : st === 'unknown' ? `layout unknown · ${r.totalFree} free` : 'not bookable';
               const title = { mid: 'Middle seats available', edge: 'Seats only at the front or sides', full: 'Sold out', pending: 'Bookable; seat map not checked yet', unknown: "Hall direction not known yet, so middle seats aren't claimed", off: 'Not available' }[st];
-              return `<button class="${cls}" data-k="${esc(k)}" title="${title}"><div class="t">${esc(s.time)}</div><div class="sc">${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</div><div class="seatline">${line}</div></button>`;
+              const fastWatch = (state.status?.hot || []).includes(k);
+              return `<button class="${cls}" data-k="${esc(k)}" title="${title}${fastWatch ? ' · ⚡ fast loop: re-checked every few seconds' : ''}"><div class="t">${fastWatch ? '⚡' : ''}${esc(s.time)}</div><div class="sc">${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</div><div class="seatline">${line}</div></button>`;
             }).join('') + `</div></div>`;
         }).join('') + `</article>`;
     }).join('');

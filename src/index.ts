@@ -30,6 +30,10 @@ interface Ctx {
   venueByCode: Map<string, VenueConfig>;
   /** sessionKey → last seat check (ms) */
   seatChecked: Map<string, number>;
+  /** Shows the fast loop is currently covering (skipped by the regular seat checks) */
+  hot: Set<string>;
+  /** Both loops stay quiet until this time after a block */
+  pausedUntil: number;
 }
 
 async function pollDate(ctx: Ctx, venue: VenueConfig, date: string): Promise<void> {
@@ -89,7 +93,8 @@ async function dueSeatChecks(ctx: Ctx): Promise<Show[]> {
   const candidates = [...latest.values()]
     .filter((s) => s.status === 'open' && s.date >= today && venueByCode.has(s.venue))
     .flatMap((s) => s.shows)
-    .filter((s) => isWatchedMovie(s, venueByCode.get(s.venue)!) && s.availStatus !== '0' && s.eventCode);
+    .filter((s) => isWatchedMovie(s, venueByCode.get(s.venue)!) && s.availStatus !== '0' && s.eventCode)
+    .filter((s) => !ctx.hot.has(showKey(s)));
 
   const unknown = candidates.filter((s) => !seatChecked.has(showKey(s)));
   if (unknown.length) {
@@ -109,13 +114,13 @@ async function dueSeatChecks(ctx: Ctx): Promise<Show[]> {
   return due.slice(0, neverChecked ? cfg.seats.perRound * 2 : cfg.seats.perRound);
 }
 
-async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
+async function checkSeats(ctx: Ctx, show: Show, slot: 'seat' | 'hot' = 'seat'): Promise<void> {
   const { cfg, source, store, live } = ctx;
   const venue = ctx.venueByCode.get(show.venue)!;
   ctx.seatChecked.set(showKey(show), Date.now());
   let map;
   try {
-    map = await source.fetchSeatMap!(show);
+    map = await source.fetchSeatMap!(show, slot);
   } catch (err) {
     if (err instanceof SeatMapUnavailable) {
       log.warn(`seats ${venue.code} ${show.date} ${show.time} ${show.screen} (${show.sessionId}) skipped: ${err.message}`);
@@ -179,25 +184,37 @@ async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
       `${summary.middleFree} middle, best block ${summary.bestBlock}${summary.middleOk ? ' ✓' : ''}`,
   );
 
-  // 🎯 Alert on the transition to "has middle seats". The new result is only
-  // stored after Telegram accepts the message, so a failed send is retried.
+  // 🎯 Alerts: (a) a show now has middle seats, (b) an already-green show gained
+  // a lot more (a row was released). The new result is only stored after
+  // Telegram accepts the message, so a failed send is retried.
   const sKey = seatsKey(source.name, venue.code, show.date, show.sessionId);
   const prev = JSON.parse((await store.get(sKey)) ?? 'null') as SeatResult | null;
-  if (cfg.seats.alertMiddle && summary.middleOk && layoutSource !== 'unknown' && !prev?.middleOk) {
-    const dedupeKey = `fdfs:${source.name}:${venue.code}:alerted:middle:${show.date}:${show.sessionId}`;
+  let title: string | null = null;
+  let kind = 'middle';
+  if (cfg.seats.alertMiddle && summary.middleOk && layoutSource !== 'unknown') {
+    const gained = summary.middleFree - (prev?.middleFree ?? 0);
+    if (!prev?.middleOk) {
+      title = 'MIDDLE SEATS';
+    } else if (cfg.seats.alertIncrease > 0 && gained >= cfg.seats.alertIncrease) {
+      title = `MORE MIDDLE SEATS (+${gained})`;
+      kind = 'middle-more';
+    }
+  }
+  if (title) {
+    const dedupeKey = `fdfs:${source.name}:${venue.code}:alerted:${kind}:${show.date}:${show.sessionId}`;
     if ((await store.get(dedupeKey)) === null) {
       const priority = isPriority(show, cfg);
       const link = source.seatMapUrl?.(show) ?? source.bookingUrl(venue, show.date);
-      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, venue.name, link));
-      await store.setNX(dedupeKey, '1', 30 * 60);
-      log.info(`middle-seat alert sent for ${show.sessionId}`);
+      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, venue.name, link, title));
+      await store.setNX(dedupeKey, '1', cfg.seats.alertCooldownMinutes * 60);
+      log.info(`${title} alert sent for ${venue.code} ${show.sessionId}${slot === 'hot' ? ' (fast loop)' : ''}`);
       await live.logAlert({
         date: show.date,
         venue: venue.code,
         venueName: venue.name,
         kind: 'middle_seats',
         priority,
-        summary: `Middle seats: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen} — ${summary.middleFree} free`,
+        summary: `${title === 'MIDDLE SEATS' ? 'Middle seats' : title}: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen} — ${summary.middleFree} free`,
       });
     }
   }
@@ -206,6 +223,76 @@ async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
     { ...summary, source: source.name, venue: venue.code, date: show.date, sessionId: show.sessionId, screen: show.screen },
     [lKey],
   );
+}
+
+/** Shows for the fast loop: watched, bookable, matching the fast filters; priority formats and earlier dates first. */
+function pickHotShows(ctx: Ctx): Show[] {
+  const { cfg, latest, venueByCode } = ctx;
+  const f = cfg.seats.fast;
+  const today = todayIST();
+  const fmt = (s: Show) => `${s.attributes} ${s.dimension}`.toLowerCase();
+  return [...latest.values()]
+    .filter((snap) => snap.status === 'open' && snap.date >= today && venueByCode.has(snap.venue))
+    .flatMap((snap) => snap.shows)
+    .filter((s) => s.availStatus !== '0' && s.eventCode && isWatchedMovie(s, venueByCode.get(s.venue)!))
+    .filter((s) => (!f.venues.length || f.venues.includes(s.venue)) && (!f.dates.length || f.dates.includes(s.date)))
+    .filter((s) => !f.formats.length || f.formats.some((x) => fmt(s).includes(x.toLowerCase())))
+    .sort(
+      (a, b) =>
+        Number(isPriority(b, cfg)) - Number(isPriority(a, cfg)) ||
+        a.date.localeCompare(b.date) ||
+        a.showDateTime.localeCompare(b.showDateTime),
+    )
+    .slice(0, f.maxShows);
+}
+
+/**
+ * Fast loop: keeps re-reading the hot shows in their own tab so a released
+ * row is noticed within ~intervalSeconds. Runs alongside the main loop.
+ */
+async function hotLoop(ctx: Ctx): Promise<void> {
+  const f = ctx.cfg.seats.fast;
+  if (!ctx.cfg.seats.enabled || !f.enabled || f.maxShows === 0 || !ctx.source.fetchSeatMap) return;
+  await sleep(30_000, stop.signal); // let the main loop fetch showtimes first
+  let lastList = '';
+  while (!stop.signal.aborted) {
+    if (Date.now() < ctx.pausedUntil) {
+      await sleep(ctx.pausedUntil - Date.now(), stop.signal);
+      continue;
+    }
+    const shows = pickHotShows(ctx);
+    ctx.hot = new Set(shows.map(showKey));
+    const list = shows.map((s) => `${s.venue} ${s.date} ${s.time} ${s.screen}`).join(' | ');
+    if (list !== lastList) {
+      log.info(`fast loop now watching: ${list || '(nothing bookable matches)'}`);
+      await ctx.live.setHot(shows.map((s) => `${s.source}:${s.venue}:${s.date}:${s.sessionId}`));
+      lastList = list;
+    }
+    if (!shows.length) {
+      await sleep(20_000, stop.signal);
+      continue;
+    }
+    const started = Date.now();
+    for (const show of shows) {
+      if (stop.signal.aborted || Date.now() < ctx.pausedUntil) break;
+      try {
+        await checkSeats(ctx, show, 'hot');
+      } catch (err) {
+        if (err instanceof BlockedError) {
+          const backoff = randomBetween(ctx.cfg.poll.blockedBackoffMinMinutes, ctx.cfg.poll.blockedBackoffMaxMinutes) * 60_000;
+          ctx.pausedUntil = Date.now() + backoff;
+          log.warn(`fast loop blocked (${err.message}); pausing both loops ${Math.round(backoff / 1000)}s`);
+          await ctx.live.setStatus('blocked', err.message);
+          break;
+        }
+        log.warn(`fast loop ${show.venue} ${show.sessionId}: ${(err as Error).message.split('\n')[0]}`);
+      }
+      await sleep(randomBetween(1, 2.5) * 1000, stop.signal);
+    }
+    const target = f.intervalSeconds * 1000 * randomBetween(0.85, 1.15);
+    const elapsed = Date.now() - started;
+    if (elapsed < target) await sleep(target - elapsed, stop.signal);
+  }
 }
 
 async function main() {
@@ -234,6 +321,8 @@ async function main() {
     latest: new Map(),
     seatChecked: new Map(),
     venueByCode: new Map(cfg.venues.map((v) => [v.code, v])),
+    hot: new Set(),
+    pausedUntil: 0,
   };
   await live.setStatus('starting');
 
@@ -272,6 +361,7 @@ async function main() {
         }
         await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
         const backoff = randomBetween(cfg.poll.blockedBackoffMinMinutes, cfg.poll.blockedBackoffMaxMinutes) * 60_000;
+        ctx.pausedUntil = Date.now() + backoff;
         log.info(`backing off ${Math.round(backoff / 1000)}s`);
         if (!once) await sleep(backoff, stop.signal);
         return false;
@@ -288,8 +378,14 @@ async function main() {
     }
   }
 
+  const fast = once ? Promise.resolve() : hotLoop(ctx).catch((e) => log.error(`fast loop crashed: ${(e as Error).stack ?? e}`));
+
   try {
     round: while (!stop.signal.aborted) {
+      if (Date.now() < ctx.pausedUntil) {
+        await sleep(ctx.pausedUntil - Date.now(), stop.signal);
+        continue;
+      }
       const today = todayIST();
       // Date-major order: each date is checked at every venue before moving on.
       const jobs = cfg.dates
@@ -326,6 +422,8 @@ async function main() {
       await sleep(randomBetween(cfg.poll.minSeconds, cfg.poll.maxSeconds) * 1000, stop.signal);
     }
   } finally {
+    stop.abort();
+    await fast;
     await live.setStatus('stopped');
     await source.close();
     await store.close();

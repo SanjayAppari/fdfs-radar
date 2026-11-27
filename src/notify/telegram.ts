@@ -59,14 +59,14 @@ export function formatAlert(alert: Alert, venueName: string, link: string): stri
 }
 
 /** 🎯 alert: a watched show now has free seats in the middle of the hall. */
-export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, venueName: string, link: string): string {
+export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, venueName: string, link: string, title = 'MIDDLE SEATS'): string {
   const s = a.show;
   const rows = seats.rows
     .filter((r) => r.middleFree > 0)
     .map((r) => `${escapeHtml(r.row)}: ${r.middleFree}`)
     .join(', ');
   return [
-    `${a.priority ? '🔥 ' : ''}🎯 <b>MIDDLE SEATS</b> — ${escapeHtml(venueName)}`,
+    `${a.priority ? '🔥 ' : ''}🎯 <b>${escapeHtml(title)}</b> — ${escapeHtml(venueName)}`,
     `🎬 <b>${escapeHtml(s.movie)}</b>`,
     `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
     `🖥 ${screenLine(a)}`,

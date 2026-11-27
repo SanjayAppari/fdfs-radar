@@ -87,7 +87,7 @@ export interface ShowSource {
   /** Called after a block / repeated errors: refresh session, reload page, etc. */
   recover(): Promise<void>;
   /** Optional: seat-level availability for one show. */
-  fetchSeatMap?(show: Show): Promise<SeatMap>;
+  fetchSeatMap?(show: Show, slot?: 'seat' | 'hot'): Promise<SeatMap>;
   /** Optional: direct link to a show's seat map */
   seatMapUrl?(show: Show): string;
   /** Public booking link for a venue + date, used in alerts */

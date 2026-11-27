@@ -25,6 +25,24 @@ export interface SeatConfig {
   /** Re-read a show's seat map at most this often */
   minIntervalMinutes: number;
   middle: MiddlePolicy;
+  /** 🎯 alert again when an already-green show gains at least this many middle seats (0 = off) */
+  alertIncrease: number;
+  /** Repeat 🎯 alerts for the same show at most this often */
+  alertCooldownMinutes: number;
+  /** Fast loop: re-read a few "hot" shows every few seconds in a dedicated tab */
+  fast: FastConfig;
+}
+
+export interface FastConfig {
+  enabled: boolean;
+  /** How many shows the fast loop cycles through */
+  maxShows: number;
+  /** Target seconds between re-reads of the same hot show */
+  intervalSeconds: number;
+  /** Optional filters; empty = any. Shows in priority formats and earlier dates are picked first. */
+  venues: string[];
+  dates: string[];
+  formats: string[];
 }
 
 export interface VenueConfig {
@@ -61,6 +79,9 @@ const DEFAULT_SEATS: SeatConfig = {
   perRound: 3,
   minIntervalMinutes: 5,
   middle: { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 },
+  alertIncrease: 4,
+  alertCooldownMinutes: 10,
+  fast: { enabled: true, maxShows: 4, intervalSeconds: 20, venues: [], dates: [], formats: [] },
 };
 
 function parseSeats(raw: unknown): SeatConfig {
@@ -79,7 +100,26 @@ function parseSeats(raw: unknown): SeatConfig {
     perRound: r.perRound ?? DEFAULT_SEATS.perRound,
     minIntervalMinutes: r.minIntervalMinutes ?? DEFAULT_SEATS.minIntervalMinutes,
     middle,
+    alertIncrease: r.alertIncrease ?? DEFAULT_SEATS.alertIncrease,
+    alertCooldownMinutes: r.alertCooldownMinutes ?? DEFAULT_SEATS.alertCooldownMinutes,
+    fast: parseFast((r as { fast?: unknown }).fast),
   };
+}
+
+function parseFast(raw: unknown): FastConfig {
+  const f = (raw ?? {}) as Partial<FastConfig>;
+  const d = DEFAULT_SEATS.fast;
+  const fast: FastConfig = {
+    enabled: f.enabled ?? d.enabled,
+    maxShows: f.maxShows ?? d.maxShows,
+    intervalSeconds: f.intervalSeconds ?? d.intervalSeconds,
+    venues: strings(f.venues, 'seats.fast.venues').map((v) => v.toUpperCase()),
+    dates: strings(f.dates, 'seats.fast.dates').map(normaliseDate),
+    formats: strings(f.formats, 'seats.fast.formats'),
+  };
+  if (fast.maxShows < 0 || fast.maxShows > 12) throw new Error('seats.fast.maxShows must be 0–12');
+  if (fast.intervalSeconds < 5) throw new Error('seats.fast.intervalSeconds must be at least 5');
+  return fast;
 }
 
 const parseScreens = (raw: unknown): Record<string, ScreenOverride> => {

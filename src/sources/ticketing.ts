@@ -128,6 +128,8 @@ export class TicketingSource implements ShowSource {
   private page?: Page;
   /** Second tab used only for seat maps, so the venue page stays loaded. */
   private seatPage?: Page;
+  /** Third tab for the hot-show loop, so it never collides with the normal seat checks. */
+  private hotPage?: Page;
   private lastLoadAt = 0;
 
   constructor(private readonly opts: TicketingSourceOptions) {}
@@ -236,8 +238,9 @@ export class TicketingSource implements ShowSource {
    * selection dialog (the visual map is a canvas). Read-only: it picks
    * "1 ticket" to list seats but never selects or holds a seat.
    */
-  fetchSeatMap(show: Show): Promise<SeatMap> {
-    return this.readSeatMap(show);
+  /** `slot` picks the browser tab: 'seat' for regular checks, 'hot' for the fast loop. */
+  fetchSeatMap(show: Show, slot: 'seat' | 'hot' = 'seat'): Promise<SeatMap> {
+    return this.readSeatMap(show, undefined, slot);
   }
 
   /**
@@ -283,10 +286,16 @@ export class TicketingSource implements ShowSource {
     return { map, geometry };
   }
 
-  private async readSeatMap(show: Show, onMapReady?: (page: Page) => Promise<void>): Promise<SeatMap> {
+  private async readSeatMap(show: Show, onMapReady?: (page: Page) => Promise<void>, slot: 'seat' | 'hot' = 'seat'): Promise<SeatMap> {
     await this.ensurePage();
-    if (!this.seatPage || this.seatPage.isClosed()) this.seatPage = await this.context!.newPage();
-    const page = this.seatPage;
+    let page: Page;
+    if (slot === 'hot') {
+      if (!this.hotPage || this.hotPage.isClosed()) this.hotPage = await this.context!.newPage();
+      page = this.hotPage;
+    } else {
+      if (!this.seatPage || this.seatPage.isClosed()) this.seatPage = await this.context!.newPage();
+      page = this.seatPage;
+    }
     const t = 20_000;
 
     try {
@@ -319,12 +328,7 @@ export class TicketingSource implements ShowSource {
         throw new SeatMapUnavailable(`seat map did not load for session ${show.sessionId}`);
       }
 
-      // Quantity pop-up overlays the page on first load.
-      const qtyConfirm = page.getByText('Select Seats', { exact: true }).first();
-      if (await qtyConfirm.isVisible().catch(() => false)) {
-        await this.clickThrough(page, qtyConfirm);
-        await page.waitForTimeout(800);
-      }
+      await this.dismissQuantityPopup(page);
       if (onMapReady) await onMapReady(page);
 
       await this.clickThrough(page, a11yBtn);
@@ -393,14 +397,28 @@ export class TicketingSource implements ShowSource {
     }
   }
 
-  /** Click, and if a tooltip/overlay intercepts it, dismiss with Escape and force the click. */
+  /**
+   * The "How many seats?" pop-up can appear a second or two after the page
+   * looks ready (especially on repeat visits), so wait for it briefly.
+   */
+  private async dismissQuantityPopup(page: Page, waitMs = 3_000): Promise<void> {
+    const confirm = page.getByText('Select Seats', { exact: true }).first();
+    const shown = await confirm.waitFor({ state: 'visible', timeout: waitMs }).then(() => true, () => false);
+    if (!shown) return;
+    await confirm.click({ timeout: 5_000 }).catch(() => confirm.click({ timeout: 5_000, force: true }));
+    await confirm.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+
+  /** Click; if something intercepts it (late pop-up, tooltip), clear it and retry, then force. */
   private async clickThrough(page: Page, target: ReturnType<Page['locator']>): Promise<void> {
     try {
-      await target.click({ timeout: 8_000 });
+      await target.click({ timeout: 6_000 });
     } catch {
+      await this.dismissQuantityPopup(page, 1_000);
       await page.keyboard.press('Escape').catch(() => {});
-      await page.waitForTimeout(500);
-      await target.click({ timeout: 8_000, force: true });
+      await page.waitForTimeout(400);
+      await target.click({ timeout: 6_000, force: true });
     }
   }
 
@@ -432,6 +450,7 @@ export class TicketingSource implements ShowSource {
     this.context = undefined;
     this.page = undefined;
     this.seatPage = undefined;
+    this.hotPage = undefined;
     await ctx?.close().catch(() => {});
   }
 }

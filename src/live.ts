@@ -50,6 +50,8 @@ export interface WatcherStatus {
   startedAt: string;
   lastPollAt?: string;
   venues: { code: string; name: string; dates: string[]; movies: string[] }[];
+  /** Shows the fast loop is re-reading, as source:venue:date:sessionId */
+  hot?: string[];
   source: string;
   dates: string[];
   movies: string[];
@@ -121,7 +123,15 @@ export class LiveFeed {
     });
   }
 
-  snapshot(venue: VenueConfig, snap: DateSnapshot, bookingUrl: string, changedKeys: string[]) {
+  setHot(keys: string[]) {
+    return this.safe('hot', async () => {
+      this.status = { ...this.status, hot: keys };
+      await this.store.writeAll([{ key: STATUS_KEY, value: JSON.stringify(this.status) }]);
+      await this.emit({ type: 'status', status: this.status });
+    });
+  }
+
+    snapshot(venue: VenueConfig, snap: DateSnapshot, bookingUrl: string, changedKeys: string[]) {
     return this.safe('snapshot', async () => {
       const key = snapshotKey(snap.source, snap.venue, snap.date);
       const live: LiveSnapshot = {
