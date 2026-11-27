@@ -124,15 +124,26 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (url.pathname === '/api/state') {
-    const [statusRaw, snapKeys, alertsRaw] = await Promise.all([
+    const [statusRaw, snapKeys, seatKeys, alertsRaw] = await Promise.all([
       redis.get(STATUS_KEY),
       scanKeys('fdfs:*:snapshot:*'),
+      scanKeys('fdfs:*:seats:*'),
       redis.lrange(ALERT_LOG_KEY, 0, 99),
     ]);
     const snapshots = snapKeys.keys.length ? (await redis.mget(...snapKeys.keys)).map(parseJSON).filter(Boolean) : [];
+    const seats: Record<string, unknown> = {};
+    if (seatKeys.keys.length) {
+      for (const r of (await redis.mget(...seatKeys.keys)).map(parseJSON)) {
+        if (r && typeof r === 'object') {
+          const x = r as { source: string; venue: string; date: string; sessionId: string };
+          seats[`${x.source}:${x.venue}:${x.date}:${x.sessionId}`] = r;
+        }
+      }
+    }
     return json(res, 200, {
       status: parseJSON(statusRaw),
       snapshots,
+      seats,
       alerts: alertsRaw.map(parseJSON),
       serverTime: new Date().toISOString(),
     });

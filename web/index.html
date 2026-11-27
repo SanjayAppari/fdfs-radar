@@ -124,6 +124,13 @@
   .chip.avail .t::before { background: var(--ok); }
   .chip.hot { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--hot) 70%, transparent); }
   .chip.hot .t::after { content: '🔥'; font-size: 12px; }
+  .chip.edge { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .chip.edge .t::before { background: var(--warn); }
+  .chip.pending { background: var(--surface); border-style: dashed; }
+  .chip.pending .t::before { background: transparent; border: 1.5px solid var(--muted); width: 5px; height: 5px; }
+  .chip .seatline { font-size: 11px; font-weight: 600; margin-top: 2px; white-space: nowrap; color: var(--muted); }
+  .chip.avail .seatline { color: var(--ok); }
+  .chip.edge .seatline { color: var(--warn); }
   .chip.flash { animation: flash 2.4s ease-out; }
   .chip.new::after { content: 'NEW'; position: absolute; top: -7px; right: -6px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 5px; }
   @keyframes flash { 0% { box-shadow: 0 0 0 6px var(--flash); } 100% { box-shadow: 0 0 0 0 transparent; } }
@@ -160,6 +167,28 @@
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; margin-bottom: 14px; }
   .kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
   .cats { width: 100%; margin: 6px 0 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid var(--border); }
+  .legend .l-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+  .legend .l-edge { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .legend .l-off { background: var(--off-bg); }
+  .legend .l-pend { border-style: dashed; background: var(--surface); }
+
+  .hall { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px 10px; margin: 6px 0 14px; overflow-x: auto; }
+  .hrow { display: flex; align-items: center; gap: 6px; min-height: 13px; margin-bottom: 3px; }
+  .hrow .lbl { width: 16px; flex: 0 0 16px; font: 600 10px/1 var(--mono); color: var(--muted); text-align: center; }
+  .hrow.good .lbl { color: var(--ok); }
+  .hrow .sts { display: flex; gap: 2px; flex-wrap: nowrap; }
+  .st { width: 9px; height: 9px; border-radius: 2px; background: var(--border); flex: 0 0 9px; }
+  .st.f { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ok); }
+  .st.m { background: var(--ok); }
+  .hrow .full { height: 6px; flex: 1; min-width: 120px; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--border) 0 9px, transparent 9px 11px); opacity: .8; }
+  .hrow.good { background: color-mix(in srgb, var(--ok) 6%, transparent); border-radius: 4px; }
+  .screenbar { margin: 10px auto 0; width: 70%; height: 5px; border-radius: 0 0 50% 50%; background: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .screenlbl { text-align: center; font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: .1em; }
+  .note { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
+
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 25; opacity: 0; pointer-events: none; transition: opacity .2s; }
   .scrim.open { opacity: 1; pointer-events: auto; }
 
@@ -208,10 +237,11 @@
     <div class="toolbar">
       <input type="search" id="showSearch" placeholder="Filter movie, screen, format…" style="flex:1;max-width:320px" />
       <label><input type="checkbox" id="watchedOnly" checked /> Watched movies only</label>
-      <label><input type="checkbox" id="availOnly" /> Available only</label>
+      <label><input type="checkbox" id="availOnly" /> Middle seats only</label>
       <label><input type="checkbox" id="hotOnly" /> 🔥 Priority only</label>
     </div>
     <div class="stats" id="stats"></div>
+    <div class="legend"><span><i class="l-ok"></i>Middle seats free</span><span><i class="l-edge"></i>Front / side seats only</span><span><i class="l-off"></i>Sold out / not bookable</span><span><i class="l-pend"></i>Bookable, seats not checked yet</span></div>
     <div id="movies"></div>
   </section>
 
@@ -255,7 +285,9 @@
   const state = {
     status: null,
     snapshots: [],
+    seats: {},
     alerts: [],
+    prevMiddle: new Map(),
     selectedDate: store.get('date', null),
     tab: store.get('tab', 'shows'),
     prevShows: new Map(),   // sessionKey -> availStatus (for flash)
@@ -297,6 +329,15 @@
     return Math.round(s / 86400) + 'd';
   };
   const showKey = (s) => s.source + ':' + s.venue + ':' + s.date + ':' + s.sessionId;
+  const seatInfo = (s) => (s.availStatus === '0' ? null : state.seats[showKey(s)] || null);
+  /** 'mid' | 'edge' | 'full' | 'pending' | 'off' */
+  const seatState = (s) => {
+    if (s.availStatus === '0') return 'off';
+    const r = seatInfo(s);
+    if (!r) return 'pending';
+    if (r.middleOk) return 'mid';
+    return r.totalFree > 0 ? 'edge' : 'full';
+  };
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   let toastTimer;
   const toast = (msg) => { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 4000); };
@@ -346,8 +387,8 @@
         : s.status === 'venue_down' ? '<span class="tag down">venue down</span>'
         : '<span class="tag closed">not open</span>';
       const watched = s ? s.shows.filter((x) => x.watched) : [];
-      const avail = watched.filter((x) => x.availStatus === '1').length;
-      const counts = s && s.status === 'open' ? `<span>${avail}/${watched.length} avail</span>` : '';
+      const mid = watched.filter((x) => seatState(x) === 'mid').length;
+      const counts = s && s.status === 'open' ? `<span>${mid}/${watched.length} middle</span>` : '';
       return `<button class="datebtn" data-date="${d}" aria-pressed="${d === state.selectedDate}"><div class="d">${wd}, ${dm}</div><div class="s">${tag}${counts}</div></button>`;
     }).join('');
     document.querySelectorAll('.datebtn').forEach((b) => (b.onclick = () => { state.selectedDate = b.dataset.date; store.set('date', b.dataset.date); renderShows(); }));
@@ -372,12 +413,12 @@
     }
     const f = filters();
     const shows = snap.shows.filter((s) =>
-      (!f.watchedOnly || s.watched) && (!f.availOnly || s.availStatus === '1') && (!f.hotOnly || s.priority) &&
+      (!f.watchedOnly || s.watched) && (!f.availOnly || seatState(s) === 'mid') && (!f.hotOnly || s.priority) &&
       (!f.q || [s.movie, s.eventName, s.dimension, s.screen, s.attributes, s.time].join(' ').toLowerCase().includes(f.q)));
     const watched = snap.shows.filter((s) => s.watched);
     statsEl.innerHTML = [
       ['Shows', `${watched.length}<small> watched / ${snap.shows.length}</small>`],
-      ['Available', `${watched.filter((s) => s.availStatus === '1').length}`],
+      ['Middle seats', `${watched.filter((s) => seatState(s) === 'mid').length}<small> shows · ${watched.reduce((n, s) => n + (seatInfo(s)?.middleFree || 0), 0)} seats</small>`],
       ['🔥 Priority', `${watched.filter((s) => s.priority).length}`],
       ['Fetched', `<span data-ago="${snap.fetchedAt}">${ago(snap.fetchedAt)}</span>`],
     ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
@@ -400,8 +441,8 @@
     }
     moviesEl.innerHTML = [...byMovie].map(([movie, formats]) => {
       const all = [...formats.values()].flat();
-      const av = all.filter((s) => s.availStatus === '1').length;
-      return `<article class="movie"><h2>${esc(movie)} <span class="sub">${all.length} show${all.length === 1 ? '' : 's'} · ${av} available</span></h2>` +
+      const av = all.filter((s) => seatState(s) === 'mid').length;
+      return `<article class="movie"><h2>${esc(movie)} <span class="sub">${all.length} show${all.length === 1 ? '' : 's'} · ${av} with middle seats</span></h2>` +
         [...formats.values()].map((list) => {
           const s0 = list[0];
           const hot = list.some((s) => s.priority);
@@ -409,8 +450,14 @@
           return `<div class="fmt"><div class="fmt-head"><span class="name">${esc(s0.eventName)}</span><span class="badge ${hot ? 'hot' : ''}">${esc(s0.dimension || '—')}</span></div><div class="chips">` +
             list.map((s) => {
               const k = showKey(s);
-              const cls = ['chip', s.availStatus === '1' ? 'avail' : '', s.priority ? 'hot' : '', state.changed.has(k) ? 'flash' : '', state.fresh.has(k) ? 'new' : ''].join(' ');
-              return `<button class="${cls}" data-k="${esc(k)}" title="${s.availStatus === '1' ? 'Available' : 'Not available'}"><div class="t">${esc(s.time)}</div><div class="sc">${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</div></button>`;
+              const st = seatState(s), r = seatInfo(s);
+              const cls = ['chip', { mid: 'avail', edge: 'edge', pending: 'pending' }[st] || '', s.priority ? 'hot' : '', state.changed.has(k) ? 'flash' : '', state.fresh.has(k) ? 'new' : ''].join(' ');
+              const line = st === 'mid' ? `${r.middleFree} middle · ${r.totalFree} free`
+                : st === 'edge' ? `front/side only · ${r.totalFree} free`
+                : st === 'full' ? 'no seats left'
+                : st === 'pending' ? 'checking seats…' : 'not bookable';
+              const title = { mid: 'Middle seats available', edge: 'Seats only at the front or sides', full: 'Sold out', pending: 'Bookable; seat map not checked yet', off: 'Not available' }[st];
+              return `<button class="${cls}" data-k="${esc(k)}" title="${title}"><div class="t">${esc(s.time)}</div><div class="sc">${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</div><div class="seatline">${line}</div></button>`;
             }).join('') + `</div></div>`;
         }).join('') + `</article>`;
     }).join('');
@@ -430,12 +477,33 @@
         <dt>Event</dt><dd>${esc(s.eventName)}</dd>
         <dt>Format</dt><dd>${esc(s.dimension)} ${s.priority ? '🔥' : ''}</dd>
         <dt>Screen</dt><dd>${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</dd>
-        <dt>Status</dt><dd>${s.availStatus === '1' ? '✅ Available' : '⛔ Not available'}</dd>
+        <dt>Status</dt><dd>${{ mid: '✅ Middle seats free', edge: '🟠 Front / side seats only', full: '⛔ Sold out', pending: '⏳ Bookable — seat map not checked yet', off: '⛔ Not available' }[seatState(s)]}</dd>
         <dt>Session</dt><dd><code>${esc(s.sessionId)}</code> · <code>${esc(s.eventCode)}</code></dd>
         <dt>Book</dt><dd><a href="${esc(snap.bookingUrl)}" target="_blank" rel="noopener">Open booking page ↗</a></dd>
       </dl>
+      ${hallHtml(s)}
       <div class="meta" style="margin-bottom:4px">Seat classes</div>${cats || '<div class="meta">No class data</div>'}
       <div class="meta" style="margin-bottom:4px">Raw</div><pre class="json">${highlight(s)}</pre>`, null);
+  };
+
+  const hallHtml = (s) => {
+    const r = seatInfo(s);
+    if (!r) return s.availStatus === '0' ? '' : '<div class="meta" style="margin-bottom:12px">Seat map not checked yet — it is read every few minutes.</div>';
+    const byRow = new Map(r.rows.map((x) => [x.row, x]));
+    const good = new Set(r.goodRows);
+    const rowsBackToFront = [...r.hallRows].reverse();
+    const lines = rowsBackToFront.map((row) => {
+      const x = byRow.get(row);
+      const sts = x
+        ? x.seats.map((st) => `<span class="st ${st.free ? (st.middle ? 'm' : 'f') : ''}" title="${esc(row + st.n)}${st.free ? (st.middle ? ' · middle, free' : ' · free') : ' · booked'}"></span>`).join('')
+        : '<span class="full" title="Fully booked"></span>';
+      return `<div class="hrow ${good.has(row) ? 'good' : ''}"><span class="lbl">${esc(row)}</span><div class="sts">${sts}</div><span class="lbl">${x ? x.free : 0}</span></div>`;
+    }).join('');
+    const summary = `<dl class="kv"><dt>Free seats</dt><dd>${r.totalFree}</dd><dt>Middle free</dt><dd>${r.middleFree} (best block of ${r.bestBlock} together)</dd><dt>Middle rows</dt><dd>${esc(r.goodRows.join(' ') || '—')}</dd><dt>Checked</dt><dd><span data-ago="${esc(r.checkedAt)}">${ago(r.checkedAt)}</span></dd></dl>`;
+    const note = r.layoutSource === 'learned'
+      ? `<div class="note">Hall layout for ${esc(s.screen)} is a guess (rows ${esc(r.hallRows[0] || '')}–${esc(r.hallRows[r.hallRows.length - 1] || '')}, assuming row A is at the screen). Set <code>seats.screens["${esc(s.screen)}"].rows</code> in config.json — written from the screen to the back, e.g. "A-N" or "N-A".</div>`
+      : '';
+    return `<div class="meta" style="margin-bottom:4px">Seats as seen facing the screen (screen at the bottom; filled = free middle seat, outlined = other free seat)</div><div class="hall">${lines}<div class="screenbar"></div><div class="screenlbl">SCREEN</div></div>${note}${summary}`;
   };
 
   // ---------- drawer ----------
@@ -536,10 +604,21 @@
         state.prevShows.set(k, s.availStatus);
       }
     }
+    for (const snap of data.snapshots) {
+      for (const s of snap.shows) {
+        const k = showKey(s);
+        const r = s.availStatus === '0' ? null : data.seats?.[k];
+        const st = r ? (r.middleOk ? 'mid' : r.totalFree ? 'edge' : 'full') : '';
+        const prev = state.prevMiddle.get(k);
+        if (prev !== undefined && prev !== st && st) changed.add(k);
+        state.prevMiddle.set(k, st);
+      }
+    }
     state.changed = changed;
     for (const k of fresh) state.fresh.add(k);
     state.status = data.status;
     state.snapshots = data.snapshots;
+    state.seats = data.seats || {};
     state.alerts = data.alerts;
     renderStatus(); renderShows(); renderAlerts();
   };
@@ -554,7 +633,7 @@
     es.onmessage = (e) => {
       let ev; try { ev = JSON.parse(e.data); } catch { return; }
       if (ev.type === 'status') { state.status = ev.status; renderStatus(); }
-      if (ev.type === 'snapshot') {
+      if (ev.type === 'snapshot' || ev.type === 'seats') {
         loadStateSoon();
         if (state.tab === 'redis' && $('#liveKeys').checked) loadKeysSoon();
       }

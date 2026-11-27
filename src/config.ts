@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { MiddlePolicy, ScreenOverride } from './seats.js';
 
 export interface PollConfig {
   /** Seconds between rounds (each watched date once per round), random in [min, max] */
@@ -15,6 +16,17 @@ export interface PollConfig {
   reloadEveryMinutes: number;
 }
 
+export interface SeatConfig {
+  enabled: boolean;
+  /** Max seat maps to read per polling round */
+  perRound: number;
+  /** Re-read a show's seat map at most this often */
+  minIntervalMinutes: number;
+  middle: MiddlePolicy;
+  /** Per-screen layout hints, keyed by screen name as shown, e.g. "SCREEN 6" */
+  screens: Record<string, ScreenOverride>;
+}
+
 export interface WatchConfig {
   /** Display name used in alerts */
   venueName: string;
@@ -28,6 +40,36 @@ export interface WatchConfig {
   /** Case-insensitive keywords matched against show attributes or format. */
   priorityFormats: string[];
   poll: PollConfig;
+  seats: SeatConfig;
+}
+
+const DEFAULT_SEATS: SeatConfig = {
+  enabled: true,
+  perRound: 3,
+  minIntervalMinutes: 5,
+  middle: { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 },
+  screens: {},
+};
+
+function parseSeats(raw: unknown): SeatConfig {
+  const r = (raw ?? {}) as Partial<SeatConfig> & { middle?: Partial<MiddlePolicy> };
+  const middle = { ...DEFAULT_SEATS.middle, ...(r.middle ?? {}) };
+  const frac = (v: number, k: string) => {
+    if (!(v >= 0 && v <= 1)) throw new Error(`seats.middle.${k} must be between 0 and 1`);
+  };
+  frac(middle.rowsFrom, 'rowsFrom');
+  frac(middle.rowsTo, 'rowsTo');
+  frac(middle.centerWidth, 'centerWidth');
+  if (middle.rowsFrom > middle.rowsTo) throw new Error('seats.middle.rowsFrom must be <= rowsTo');
+  const screens: Record<string, ScreenOverride> = {};
+  for (const [name, o] of Object.entries(r.screens ?? {})) screens[name.trim().toUpperCase()] = o;
+  return {
+    enabled: r.enabled ?? DEFAULT_SEATS.enabled,
+    perRound: r.perRound ?? DEFAULT_SEATS.perRound,
+    minIntervalMinutes: r.minIntervalMinutes ?? DEFAULT_SEATS.minIntervalMinutes,
+    middle,
+    screens,
+  };
 }
 
 const DEFAULT_POLL: PollConfig = {
@@ -78,6 +120,7 @@ export function parseConfig(raw: unknown): WatchConfig {
     movies: strings(c.movies, 'movies'),
     priorityFormats: strings(c.priorityFormats, 'priorityFormats'),
     poll,
+    seats: parseSeats(c.seats),
   };
 }
 

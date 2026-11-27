@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from 'playwright';
 import { log } from '../log.js';
 import { todayIST } from '../time.js';
-import { BlockedError, type DateSnapshot, type Show, type ShowSource } from './types.js';
+import { BlockedError, SeatMapUnavailable, type DateSnapshot, type SeatMap, type SeatRow, type Show, type ShowSource } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Parser (pure, unit-tested against fixtures/)
@@ -114,6 +114,8 @@ export class TicketingSource implements ShowSource {
   readonly name = 'ticketing';
   private context?: BrowserContext;
   private page?: Page;
+  /** Second tab used only for seat maps, so the venue page stays loaded. */
+  private seatPage?: Page;
   private lastLoadAt = 0;
 
   constructor(private readonly opts: TicketingSourceOptions) {}
@@ -211,6 +213,124 @@ export class TicketingSource implements ShowSource {
     return parseByVenue(json, date, { source: this.name, venue });
   }
 
+  seatMapUrl(show: Show): string {
+    const { baseUrl, region, venue } = this.opts;
+    return `${baseUrl}/movies/${region}/seat-layout/${show.eventCode}/${venue}/${show.sessionId}/${show.date}`;
+  }
+
+  /**
+   * Reads seat availability through the site's own accessibility seat
+   * selection dialog (the visual map is a canvas). Read-only: it picks
+   * "1 ticket" to list seats but never selects or holds a seat.
+   */
+  async fetchSeatMap(show: Show): Promise<SeatMap> {
+    await this.ensurePage();
+    if (!this.seatPage || this.seatPage.isClosed()) this.seatPage = await this.context!.newPage();
+    const page = this.seatPage;
+    const t = 20_000;
+
+    try {
+      const url = this.seatMapUrl(show);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+          break;
+        } catch (err) {
+          // The site sometimes replaces the navigation client-side (ERR_ABORTED).
+          if (!/ERR_ABORTED|frame was detached/i.test((err as Error).message)) throw err;
+          await page.waitForTimeout(1_500);
+          if (page.url().includes('/seat-layout/')) break;
+          if (attempt >= 2) throw new SeatMapUnavailable(`navigation aborted twice (now at ${new URL(page.url() || 'about:blank', this.opts.baseUrl).pathname})`);
+        }
+      }
+      await this.waitForChallenge(page);
+
+      const a11yBtn = page.getByLabel('Open accessibility seat selection');
+      try {
+        await a11yBtn.waitFor({ state: 'visible', timeout: 30_000 });
+      } catch {
+        const title = (await page.title().catch(() => '')).toLowerCase();
+        if (/just a moment|attention required|verify you are human/.test(title)) {
+          throw new BlockedError('challenge page on seat map');
+        }
+        if (!page.url().includes('/seat-layout/')) {
+          throw new SeatMapUnavailable(`redirected away from seat map (to ${new URL(page.url()).pathname})`);
+        }
+        throw new SeatMapUnavailable(`seat map did not load for session ${show.sessionId}`);
+      }
+
+      // Quantity pop-up overlays the page on first load.
+      const qtyConfirm = page.getByText('Select Seats', { exact: true }).first();
+      if (await qtyConfirm.isVisible().catch(() => false)) {
+        await qtyConfirm.click({ timeout: t });
+        await page.waitForTimeout(800);
+      }
+
+      await a11yBtn.click({ timeout: t });
+      const qty = page.locator('select[aria-label="Select number of tickets, required"]');
+      const catSel = page.locator('select[aria-label="Select seat category"]');
+      const rowSel = page.locator('select[aria-label="Select row"]');
+      await qty.waitFor({ state: 'visible', timeout: t });
+      await qty.selectOption('1');
+
+      const optionsOf = (loc: typeof catSel) =>
+        loc.evaluate((el) =>
+          [...(el as HTMLSelectElement).options].filter((o) => o.value).map((o) => ({ value: o.value, text: o.textContent?.trim() ?? '' })),
+        );
+
+      const rows: SeatRow[] = [];
+      await catSel.waitFor({ state: 'visible', timeout: t });
+      for (const cat of await optionsOf(catSel)) {
+        await catSel.selectOption(cat.value);
+        const [catName = cat.text, price = ''] = cat.text.split(/\s+-\s+₹/);
+        // Rows only exist for categories with free seats; give the list a moment to populate.
+        const rowOpts = await page
+          .waitForFunction(
+            () => ((document.querySelector('select[aria-label="Select row"]') as HTMLSelectElement | null)?.options.length ?? 0) > 1,
+            undefined,
+            { timeout: 4_000 },
+          )
+          .then(() => optionsOf(rowSel))
+          .catch(() => []);
+
+        for (const r of rowOpts) {
+          const letter = /Row\s+(\S+)\s*$/i.exec(r.text)?.[1] ?? r.value.split('-').pop() ?? r.value;
+          await rowSel.selectOption(r.value);
+          await page.waitForFunction(
+            (row) =>
+              [...document.querySelectorAll('button[aria-label]')].some((b) =>
+                (b.getAttribute('aria-label') ?? '').endsWith(` in row ${row}`),
+              ),
+            letter,
+            { timeout: t },
+          );
+          const seats = await page.evaluate((row) => {
+            const out: { n: string; free: boolean }[] = [];
+            for (const b of document.querySelectorAll('button[aria-label]')) {
+              const m = /^(\S+)\s+seat\s+(\S+)\s+in row\s+(\S+)$/i.exec(b.getAttribute('aria-label') ?? '');
+              if (m && m[3] === row) out.push({ n: m[2]!, free: m[1]!.toLowerCase() === 'select' });
+            }
+            return out;
+          }, letter);
+          rows.push({ row: letter, category: catName.trim(), price: price.trim(), seats });
+        }
+      }
+
+      return {
+        source: this.name,
+        venue: this.opts.venue,
+        date: show.date,
+        sessionId: show.sessionId,
+        screen: show.screen,
+        checkedAt: new Date().toISOString(),
+        rows,
+      };
+    } finally {
+      // Leave the seat page so it doesn't keep polling in the background.
+      await page.goto('about:blank').catch(() => {});
+    }
+  }
+
   private async reload(): Promise<void> {
     const page = await this.ensurePage();
     try {
@@ -238,6 +358,7 @@ export class TicketingSource implements ShowSource {
     const ctx = this.context;
     this.context = undefined;
     this.page = undefined;
+    this.seatPage = undefined;
     await ctx?.close().catch(() => {});
   }
 }

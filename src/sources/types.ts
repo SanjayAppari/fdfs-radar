@@ -37,6 +37,30 @@ export interface Show {
   categories: SeatCategory[];
 }
 
+export interface SeatRow {
+  /** Row letter as printed in the hall, e.g. "D" */
+  row: string;
+  /** Seat class, e.g. "GOLD" */
+  category: string;
+  price: string;
+  /** Every seat in the row, in the order the site lists them (left → right facing the screen) */
+  seats: { n: string; free: boolean }[];
+}
+
+/**
+ * Seat-level availability for one show. Only rows that still have at least
+ * one free seat are listed by the site; fully booked rows are absent.
+ */
+export interface SeatMap {
+  source: string;
+  venue: string;
+  date: string;
+  sessionId: string;
+  screen: string;
+  checkedAt: string;
+  rows: SeatRow[];
+}
+
 export type DateStatus = 'open' | 'not_open' | 'venue_down';
 
 export interface DateSnapshot {
@@ -56,6 +80,8 @@ export interface ShowSource {
   fetchDate(date: string): Promise<DateSnapshot>;
   /** Called after a block / repeated errors: refresh session, reload page, etc. */
   recover(): Promise<void>;
+  /** Optional: seat-level availability for one show. */
+  fetchSeatMap?(show: Show): Promise<SeatMap>;
   /** Public booking link for a date, used in alerts */
   bookingUrl(date: string): string;
   close(): Promise<void>;
@@ -69,5 +95,13 @@ export class BlockedError extends Error {
   ) {
     super(message);
     this.name = 'BlockedError';
+  }
+}
+
+/** Seat map could not be read for this show (redirected, not offered); not a fault. */
+export class SeatMapUnavailable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SeatMapUnavailable';
   }
 }

@@ -110,13 +110,42 @@ pm2 logs fdfs-radar
 pm2 save && pm2 startup        # start on login (follow the printed command)
 ```
 
+## Seat checks ("middle of the theatre")
+
+For watched shows that are bookable, the watcher also reads the seat map —
+up to `seats.perRound` shows per round, each at most every
+`seats.minIntervalMinutes`. The visual map is a canvas, so it uses the site's
+own **accessibility seat selection** dialog (row-by-row seat lists) in a
+second browser tab. It is read-only: it picks "1 ticket" to list seats and
+never selects or holds one.
+
+A show counts as **middle** when at least `seatsTogether` adjacent free seats
+sit in a middle row *and* in the central part of that row:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `middle.rowsFrom` / `rowsTo` | `0.3` / `0.85` | depth band, 0 = front row (A, nearest the screen), 1 = back row |
+| `middle.centerWidth` | `0.6` | central share of each row |
+| `middle.seatsTogether` | `1` | adjacent seats needed (set 2+ when booking for a group) |
+| `screens["SCREEN 6"].rows` | `"A-N"` | full row range of a hall (`"A-H,J-N"` if a letter is skipped) |
+| `screens[...].goodRows` | — | explicit list of rows you like; skips the depth band |
+
+The site only lists rows that still have free seats, so for screens without a
+`rows` entry the hall is **learned** (union of all rows seen, stored in
+`fdfs:<source>:<venue>:layout:<SCREEN>`). The dashboard flags learned layouts;
+add `rows` for any screen you know.
+
+Results are stored in `fdfs:<source>:<venue>:seats:<date>:<SessionId>`.
+
 ## Dashboard
 
 A local, read-only web UI at **http://127.0.0.1:4317** (localhost only):
 
-- **Shows** — per date: open / not open, every showtime as a chip (green =
-  available, 🔥 = priority format, NEW badge / flash when something changes).
-  Click a chip for seat classes, prices and the booking link.
+- **Shows** — per date: open / not open, every showtime as a chip. **Green =
+  free seats in the middle**, amber = only front/side seats, grey = sold out,
+  dashed = bookable but not checked yet; 🔥 = priority format; NEW badge /
+  flash when something changes. Click a chip for a mini seat map, counts,
+  seat classes and the booking link.
 - **Redis** — live key browser (`fdfs:*` by default, any pattern works) with
   type, TTL and value; click a row for pretty-printed JSON. Changed rows flash.
 - **Alerts** — the last 200 alerts that were sent to Telegram.

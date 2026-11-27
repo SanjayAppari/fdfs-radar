@@ -5,6 +5,7 @@
 import type { WatchConfig } from './config.js';
 import { isPriority, isWatchedMovie, type Alert } from './diff.js';
 import { log } from './log.js';
+import type { SeatSummary } from './seats.js';
 import type { DateSnapshot, Show } from './sources/types.js';
 import type { RedisStore } from './store.js';
 
@@ -12,6 +13,18 @@ export const LIVE_CHANNEL = 'fdfs:events';
 export const STATUS_KEY = 'fdfs:status';
 export const ALERT_LOG_KEY = 'fdfs:alerts:log';
 export const snapshotKey = (source: string, venue: string, date: string) => `fdfs:${source}:${venue}:snapshot:${date}`;
+export const seatsKey = (source: string, venue: string, date: string, sessionId: string) =>
+  `fdfs:${source}:${venue}:seats:${date}:${sessionId}`;
+export const layoutKey = (source: string, venue: string, screen: string) =>
+  `fdfs:${source}:${venue}:layout:${screen.trim().toUpperCase().replace(/\s+/g, '_')}`;
+
+export interface SeatResult extends SeatSummary {
+  source: string;
+  venue: string;
+  date: string;
+  sessionId: string;
+  screen: string;
+}
 
 export interface LiveShow extends Show {
   watched: boolean;
@@ -47,6 +60,7 @@ export interface WatcherStatus {
 
 export type LiveEvent =
   | { type: 'snapshot'; date: string; venue: string; source: string; keys: string[] }
+  | { type: 'seats'; date: string; sessionId: string; keys: string[] }
   | { type: 'status'; status: WatcherStatus }
   | { type: 'alert'; entry: AlertLogEntry };
 
@@ -123,6 +137,14 @@ export class LiveFeed {
       };
       await this.store.writeAll([{ key, value: JSON.stringify(live), ttlSeconds: SNAPSHOT_TTL }]);
       await this.emit({ type: 'snapshot', date: snap.date, venue: snap.venue, source: snap.source, keys: [key, ...changedKeys] });
+    });
+  }
+
+  seats(result: SeatResult, extraKeys: string[] = []) {
+    return this.safe('seats', async () => {
+      const key = seatsKey(result.source, result.venue, result.date, result.sessionId);
+      await this.store.writeAll([{ key, value: JSON.stringify(result), ttlSeconds: 14 * 86_400 }]);
+      await this.emit({ type: 'seats', date: result.date, sessionId: result.sessionId, keys: [key, ...extraKeys] });
     });
   }
 

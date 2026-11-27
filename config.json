@@ -3,14 +3,55 @@
   "venue": "PRHN",
   "venueSlug": "prasads-multiplex-hyderabad",
   "region": "HYD",
-  "dates": ["20261217", "20261218"],
-  "movies": ["Avengers", "Dune"],
-  "priorityFormats": ["Infinity Vision", "PCX", "IMAX", "Dolby", "4DX", "Barco", "Laser"],
+  "dates": [
+    "20261217",
+    "20261218",
+    "20261219",
+    "20261220"
+  ],
+  "movies": [
+    "Avengers",
+    "Dune"
+  ],
+  "priorityFormats": [
+    "Infinity Vision",
+    "PCX",
+    "IMAX",
+    "Dolby",
+    "4DX",
+    "Barco",
+    "Laser"
+  ],
   "poll": {
     "minSeconds": 60,
     "maxSeconds": 90,
     "reloadEveryMinutes": 45,
     "blockedBackoffMinMinutes": 5,
     "blockedBackoffMaxMinutes": 10
+  },
+  "seats": {
+    "enabled": true,
+    "perRound": 3,
+    "minIntervalMinutes": 5,
+    "middle": {
+      "rowsFrom": 0.3,
+      "rowsTo": 0.85,
+      "centerWidth": 0.6,
+      "seatsTogether": 1
+    },
+    "screens": {
+      "SCREEN 1": {
+        "rows": "M-A"
+      },
+      "SCREEN 4": {
+        "rows": "N-A"
+      },
+      "SCREEN 5": {
+        "rows": "M-A"
+      },
+      "SCREEN 6": {
+        "rows": "A-N"
+      }
+    }
   }
 }
