@@ -1,10 +1,10 @@
 import 'dotenv/config';
-import { loadConfig, loadEnv, type WatchConfig } from './config.js';
+import { loadConfig, loadEnv, type VenueConfig, type WatchConfig } from './config.js';
 import { diffSnapshot, isPriority, isWatchedMovie } from './diff.js';
 import { layoutKey, LiveFeed, seatsKey, type SeatResult } from './live.js';
 import { log } from './log.js';
 import { formatAlert, formatMiddleSeats, packMessages, TelegramNotifier } from './notify/telegram.js';
-import { analyseSeats, expandRows, learnedHall } from './seats.js';
+import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
 import { RedisStore } from './store.js';
@@ -25,36 +25,38 @@ interface Ctx {
   store: RedisStore;
   notifier: TelegramNotifier;
   live: LiveFeed;
-  /** Latest snapshot per date, used to pick shows for seat checks */
+  /** Latest snapshot per venue+date, used to pick shows for seat checks */
   latest: Map<string, DateSnapshot>;
+  venueByCode: Map<string, VenueConfig>;
   /** sessionKey → last seat check (ms) */
   seatChecked: Map<string, number>;
 }
 
-async function pollDate(ctx: Ctx, date: string): Promise<void> {
+async function pollDate(ctx: Ctx, venue: VenueConfig, date: string): Promise<void> {
   const { cfg, source, store, notifier, live } = ctx;
-  const snap = await source.fetchDate(date);
-  ctx.latest.set(date, snap);
-  const result = await diffSnapshot(store, snap, cfg);
-  const link = source.bookingUrl(date);
-  const watchedCount = snap.shows.filter((s) => isWatchedMovie(s, cfg)).length;
+  const snap = await source.fetchDate(venue, date);
+  ctx.latest.set(`${venue.code}:${date}`, snap);
+  const watchCfg = { movies: venue.movies, priorityFormats: cfg.priorityFormats };
+  const result = await diffSnapshot(store, snap, watchCfg);
+  const link = source.bookingUrl(venue, date);
+  const watchedCount = snap.shows.filter((s) => isWatchedMovie(s, venue)).length;
   log.info(
-    `${date}: ${snap.status}, ${snap.shows.length} shows (${watchedCount} watched)` +
+    `${venue.code} ${date}: ${snap.status}, ${snap.shows.length} shows (${watchedCount} watched)` +
       (result.baseline ? ' [baseline]' : '') +
       (result.alerts.length ? `, ${result.alerts.length} alert(s)` : ''),
   );
 
   if (result.alerts.length) {
-    const messages = packMessages(result.alerts.map((a) => formatAlert(a, cfg.venueName, link)));
+    const messages = packMessages(result.alerts.map((a) => formatAlert(a, venue.name, link)));
     await notifier.sendAll(messages); // throws → no commit → retried next round
   }
   await result.commit();
-  await live.alerts(result.alerts);
-  await live.snapshot(snap, link, result.touchedKeys);
+  await live.alerts(venue, result.alerts);
+  await live.snapshot(venue, snap, link, result.touchedKeys);
   await live.setStatus('ok');
 }
 
-const showKey = (s: Show) => `${s.date}:${s.sessionId}`;
+const showKey = (s: Show) => `${s.venue}:${s.date}:${s.sessionId}`;
 
 /**
  * Watched, bookable shows whose seat map is due. Never-checked shows go first
@@ -62,16 +64,16 @@ const showKey = (s: Show) => `${s.date}:${s.sessionId}`;
  * times fall back to Redis so a restart doesn't reset the queue.
  */
 async function dueSeatChecks(ctx: Ctx): Promise<Show[]> {
-  const { cfg, latest, seatChecked, store, source } = ctx;
+  const { cfg, latest, seatChecked, store, source, venueByCode } = ctx;
   const today = todayIST();
   const candidates = [...latest.values()]
-    .filter((s) => s.status === 'open' && s.date >= today)
+    .filter((s) => s.status === 'open' && s.date >= today && venueByCode.has(s.venue))
     .flatMap((s) => s.shows)
-    .filter((s) => isWatchedMovie(s, cfg) && s.availStatus !== '0' && s.eventCode);
+    .filter((s) => isWatchedMovie(s, venueByCode.get(s.venue)!) && s.availStatus !== '0' && s.eventCode);
 
   const unknown = candidates.filter((s) => !seatChecked.has(showKey(s)));
   if (unknown.length) {
-    const stored = await store.mget(unknown.map((s) => seatsKey(source.name, cfg.venue, s.date, s.sessionId)));
+    const stored = await store.mget(unknown.map((s) => seatsKey(source.name, s.venue, s.date, s.sessionId)));
     unknown.forEach((s, i) => {
       const at = stored[i] ? Date.parse((JSON.parse(stored[i]!) as { checkedAt?: string }).checkedAt ?? '') : Number.NaN;
       seatChecked.set(showKey(s), Number.isFinite(at) ? at : 0);
@@ -89,34 +91,61 @@ async function dueSeatChecks(ctx: Ctx): Promise<Show[]> {
 
 async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
   const { cfg, source, store, live } = ctx;
+  const venue = ctx.venueByCode.get(show.venue)!;
   ctx.seatChecked.set(showKey(show), Date.now());
   let map;
   try {
     map = await source.fetchSeatMap!(show);
   } catch (err) {
     if (err instanceof SeatMapUnavailable) {
-      log.warn(`seats ${show.date} ${show.time} ${show.screen} (${show.sessionId}) skipped: ${err.message}`);
+      log.warn(`seats ${venue.code} ${show.date} ${show.time} ${show.screen} (${show.sessionId}) skipped: ${err.message}`);
       return;
     }
     throw err;
   }
 
-  // Hall rows: config wins; otherwise learn the union of every row ever seen on this screen.
-  const override = cfg.seats.screens[show.screen.trim().toUpperCase()];
-  const lKey = layoutKey(source.name, cfg.venue, show.screen);
-  let hallRows: string[];
-  let layoutSource: 'config' | 'learned';
-  if (override?.rows) {
-    hallRows = expandRows(override.rows);
-    layoutSource = 'config';
-  } else {
-    const prev = JSON.parse((await store.get(lKey)) ?? '{"seen":[]}') as { seen?: string[] };
-    const seen = [...new Set([...(prev.seen ?? []), ...map.rows.map((r) => r.row)])].sort();
-    hallRows = learnedHall(seen);
-    layoutSource = 'learned';
-    if (seen.length !== (prev.seen ?? []).length) {
-      await store.writeAll([{ key: lKey, value: JSON.stringify({ seen, hall: hallRows, updatedAt: new Date().toISOString() }) }]);
+  // Left → right: the site lists seats in drawn order. Cross-check with config
+  // and, if they ever disagree, follow config (and say so).
+  const ltr = venue.screens[show.screen.trim().toUpperCase()]?.leftToRight;
+  if (ltr) {
+    for (const row of map.rows) {
+      const dir = seatDirection(row.seats);
+      if (dir && dir !== ltr) {
+        log.warn(`${venue.code} ${show.screen} row ${row.row}: site lists seats ${dir}, config says ${ltr} — using config`);
+        row.seats.reverse();
+      }
     }
+  }
+
+  // Hall layout. Direction comes from the site's own row order when it can be
+  // read (most reliable), else from what we learned before, else config.
+  // Rows: config's letters if given, else A … furthest row ever seen.
+  const override = venue.screens[show.screen.trim().toUpperCase()];
+  const lKey = layoutKey(source.name, venue.code, show.screen);
+  const stored = JSON.parse((await store.get(lKey)) ?? '{}') as { seen?: string[]; order?: RowOrder };
+  const seen = [...new Set([...(stored.seen ?? []), ...map.rows.map((r) => r.row)])].sort();
+  const detected = detectRowOrder(map.rows);
+  const configOrder = override?.rows ? orderOfSpec(override.rows) : null;
+  const order = detected ?? stored.order ?? configOrder;
+  if (detected && configOrder && detected !== configOrder) {
+    log.warn(`${venue.code} ${show.screen}: config rows "${override!.rows}" contradict the site's row order — using the site's`);
+  }
+  if (seen.length !== (stored.seen ?? []).length || (detected && detected !== stored.order)) {
+    await store.writeAll([{ key: lKey, value: JSON.stringify({ seen, order: detected ?? stored.order ?? null, updatedAt: new Date().toISOString() }) }]);
+  }
+
+  let hallRows: string[];
+  let layoutSource: LayoutSource;
+  if (!order) {
+    hallRows = sortRows(seen);
+    layoutSource = 'unknown';
+  } else if (override?.rows) {
+    hallRows = hallFor(expandRows(override.rows), order);
+    layoutSource = configOrder === order ? 'config' : 'detected';
+  } else {
+    hallRows = learnedHall(seen);
+    hallRows = hallFor(hallRows, order);
+    layoutSource = 'detected';
   }
 
   const summary = analyseSeats(map, {
@@ -126,24 +155,26 @@ async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
     goodRowsOverride: override?.goodRows,
   });
   log.info(
-    `seats ${show.date} ${show.time} ${show.screen} (${show.sessionId}): ${summary.totalFree} free, ` +
+    `seats ${venue.code} ${show.date} ${show.time} ${show.screen} (${show.sessionId}): ${summary.totalFree} free, ` +
       `${summary.middleFree} middle, best block ${summary.bestBlock}${summary.middleOk ? ' ✓' : ''}`,
   );
 
   // 🎯 Alert on the transition to "has middle seats". The new result is only
   // stored after Telegram accepts the message, so a failed send is retried.
-  const sKey = seatsKey(source.name, cfg.venue, show.date, show.sessionId);
+  const sKey = seatsKey(source.name, venue.code, show.date, show.sessionId);
   const prev = JSON.parse((await store.get(sKey)) ?? 'null') as SeatResult | null;
-  if (cfg.seats.alertMiddle && summary.middleOk && !prev?.middleOk) {
-    const dedupeKey = `fdfs:${source.name}:${cfg.venue}:alerted:middle:${show.date}:${show.sessionId}`;
+  if (cfg.seats.alertMiddle && summary.middleOk && layoutSource !== 'unknown' && !prev?.middleOk) {
+    const dedupeKey = `fdfs:${source.name}:${venue.code}:alerted:middle:${show.date}:${show.sessionId}`;
     if ((await store.get(dedupeKey)) === null) {
       const priority = isPriority(show, cfg);
-      const link = source.seatMapUrl?.(show) ?? source.bookingUrl(show.date);
-      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, link));
+      const link = source.seatMapUrl?.(show) ?? source.bookingUrl(venue, show.date);
+      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, venue.name, link));
       await store.setNX(dedupeKey, '1', 30 * 60);
       log.info(`middle-seat alert sent for ${show.sessionId}`);
       await live.logAlert({
         date: show.date,
+        venue: venue.code,
+        venueName: venue.name,
         kind: 'middle_seats',
         priority,
         summary: `Middle seats: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen} — ${summary.middleFree} free`,
@@ -152,8 +183,8 @@ async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
   }
 
   await live.seats(
-    { ...summary, source: source.name, venue: cfg.venue, date: show.date, sessionId: show.sessionId, screen: show.screen },
-    layoutSource === 'learned' ? [lKey] : [],
+    { ...summary, source: source.name, venue: venue.code, date: show.date, sessionId: show.sessionId, screen: show.screen },
+    [lKey],
   );
 }
 
@@ -165,8 +196,7 @@ async function main() {
   const notifier = new TelegramNotifier(env.telegramToken, env.telegramChatId);
   const source: ShowSource = new TicketingSource({
     baseUrl: env.baseUrl,
-    venue: cfg.venue,
-    venueSlug: cfg.venueSlug,
+    homeVenue: cfg.venues[0]!,
     region: cfg.region,
     userDataDir: env.userDataDir,
     headless: env.headless,
@@ -175,10 +205,21 @@ async function main() {
   });
 
   const live = new LiveFeed(store, cfg, source.name);
-  const ctx: Ctx = { cfg, source, store, notifier, live, latest: new Map(), seatChecked: new Map() };
+  const ctx: Ctx = {
+    cfg,
+    source,
+    store,
+    notifier,
+    live,
+    latest: new Map(),
+    seatChecked: new Map(),
+    venueByCode: new Map(cfg.venues.map((v) => [v.code, v])),
+  };
   await live.setStatus('starting');
 
-  log.info(`watching ${cfg.venueName} dates=[${cfg.dates.join(', ')}] movies=[${cfg.movies.join(', ') || 'ALL'}]`);
+  for (const v of cfg.venues) {
+    log.info(`watching ${v.name} (${v.code}) dates=[${v.dates.join(', ')}] movies=[${v.movies.join(', ') || 'ALL'}]`);
+  }
   await source.init();
 
   let blocked = false;
@@ -193,7 +234,7 @@ async function main() {
       if (blocked) {
         blocked = false;
         log.info('unblocked');
-        await notifier.send(`✅ <b>Watcher recovered</b> — polling ${cfg.venueName} again.`).catch(() => {});
+        await notifier.send(`✅ <b>Watcher recovered</b> — polling again.`).catch(() => {});
       }
       return true;
     } catch (err) {
@@ -230,28 +271,31 @@ async function main() {
   try {
     round: while (!stop.signal.aborted) {
       const today = todayIST();
-      const dates = cfg.dates.filter((d) => d >= today);
-      if (dates.length === 0) {
+      // Date-major order: each date is checked at every venue before moving on.
+      const jobs = cfg.dates
+        .filter((d) => d >= today)
+        .flatMap((date) => cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date })));
+      if (jobs.length === 0) {
         log.warn('all configured dates are in the past — update config.json');
         if (once) break;
         await sleep(30 * 60_000, stop.signal);
         continue;
       }
 
-      for (const [i, date] of dates.entries()) {
+      for (const [i, { venue, date }] of jobs.entries()) {
         if (stop.signal.aborted) break round;
-        if (!(await step(date, () => pollDate(ctx, date)))) {
+        if (!(await step(`${venue.code} ${date}`, () => pollDate(ctx, venue, date)))) {
           if (once) break round;
           continue round;
         }
-        if (i < dates.length - 1) await gap();
+        if (i < jobs.length - 1) await gap();
       }
 
       if (cfg.seats.enabled && source.fetchSeatMap) {
         for (const show of await dueSeatChecks(ctx)) {
           if (stop.signal.aborted) break round;
           await gap();
-          if (!(await step(`seats ${show.date} ${show.sessionId}`, () => checkSeats(ctx, show)))) {
+          if (!(await step(`seats ${show.venue} ${show.date} ${show.sessionId}`, () => checkSeats(ctx, show)))) {
             if (once) break round;
             continue round;
           }

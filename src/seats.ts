@@ -28,6 +28,8 @@ export interface ScreenOverride {
   rows?: string;
   /** Explicit list of rows you consider good; skips the depth calculation */
   goodRows?: string[];
+  /** Seat numbers as seen facing the screen: "asc" = 1 on the left, "desc" = highest on the left */
+  leftToRight?: 'asc' | 'desc';
 }
 
 export interface SeatView {
@@ -57,10 +59,56 @@ export interface SeatSummary {
   middleOk: boolean;
   /** All rows of the hall, front (screen) → back */
   hallRows: string[];
-  layoutSource: 'config' | 'learned';
+  /**
+   * config   = rows from config.json (direction confirmed or not contradicted)
+   * detected = direction read from the site's own row order
+   * unknown  = direction could not be determined; middle seats are not claimed
+   */
+  layoutSource: LayoutSource;
   goodRows: string[];
   /** Rows with at least one free seat (front → back) */
   rows: RowSummary[];
+}
+
+export type LayoutSource = 'config' | 'detected' | 'unknown';
+
+/**
+ * Direction of the hall from the site's row lists. Within one seat class the
+ * site lists rows top → bottom as drawn, and the screen is always drawn at the
+ * bottom. 'asc' = letters increase towards the screen (A at the back);
+ * 'desc' = letters decrease towards the screen (A at the screen).
+ */
+export type RowOrder = 'asc' | 'desc';
+
+export function detectRowOrder(rows: { row: string; category: string }[]): RowOrder | null {
+  let up = 0;
+  let down = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1]!;
+    const b = rows[i]!;
+    if (a.category !== b.category) continue;
+    const c = rowCompare(a.row, b.row);
+    if (c < 0) up++;
+    else if (c > 0) down++;
+  }
+  if (up && !down) return 'asc';
+  if (down && !up) return 'desc';
+  if (up >= 3 * down && up >= 3) return 'asc';
+  if (down >= 3 * up && down >= 3) return 'desc';
+  return null;
+}
+
+/** Direction implied by a config spec written screen → back ("N-A" ⇒ 'asc'). */
+export function orderOfSpec(spec: string): RowOrder | null {
+  const rows = expandRows(spec);
+  if (rows.length < 2) return null;
+  return rowCompare(rows[0]!, rows[rows.length - 1]!) > 0 ? 'asc' : 'desc';
+}
+
+/** Hall rows screen → back for a set of row letters and a direction. */
+export function hallFor(letters: Iterable<string>, order: RowOrder): string[] {
+  const sorted = sortRows(letters);
+  return order === 'desc' ? sorted : sorted.reverse();
 }
 
 export const rowCompare = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
@@ -111,7 +159,7 @@ const seatNum = (n: string) => {
 
 export function analyseSeats(
   map: Pick<SeatMap, 'checkedAt' | 'rows'>,
-  opts: { hallRows: string[]; layoutSource: 'config' | 'learned'; policy: MiddlePolicy; goodRowsOverride?: string[] },
+  opts: { hallRows: string[]; layoutSource: LayoutSource; policy: MiddlePolicy; goodRowsOverride?: string[] },
 ): SeatSummary {
   const { policy } = opts;
   // Keep the configured front→back order; unknown rows (shouldn't happen) go to the back.
@@ -119,7 +167,12 @@ export function analyseSeats(
   const hallRows = [...opts.hallRows, ...extra];
   const depth = new Map(hallRows.map((r, i) => [r, i]));
   const override = new Set((opts.goodRowsOverride ?? []).map((r) => r.toUpperCase()));
-  const goodRows = override.size ? hallRows.filter((r) => override.has(r)) : pickGoodRows(hallRows, policy);
+  const goodRows =
+    opts.layoutSource === 'unknown'
+      ? []
+      : override.size
+        ? hallRows.filter((r) => override.has(r))
+        : pickGoodRows(hallRows, policy);
   const good = new Set(goodRows);
 
   let totalFree = 0;
@@ -177,4 +230,11 @@ export function analyseSeats(
     goodRows,
     rows,
   };
+}
+
+/** Direction of seat numbers in a row as listed (left → right), or null if unclear. */
+export function seatDirection(seats: { n: string }[]): 'asc' | 'desc' | null {
+  const nums = seats.map((x) => Number.parseInt(x.n, 10)).filter(Number.isFinite);
+  if (nums.length < 2) return null;
+  return nums[nums.length - 1]! > nums[0]! ? 'asc' : nums[nums.length - 1]! < nums[0]! ? 'desc' : null;
 }

@@ -25,17 +25,27 @@ export interface SeatConfig {
   /** Re-read a show's seat map at most this often */
   minIntervalMinutes: number;
   middle: MiddlePolicy;
+}
+
+export interface VenueConfig {
+  /** Display name used in alerts, e.g. "AMB Cinemas" */
+  name: string;
+  /** Site venue code, e.g. "PRHN" */
+  code: string;
+  /** Slug from the venue page link, e.g. "prasads-multiplex-hyderabad" */
+  slug: string;
+  /** Dates for this venue (YYYYMMDD); defaults to the top-level dates */
+  dates: string[];
+  /** Movie keywords for this venue; defaults to the top-level movies */
+  movies: string[];
   /** Per-screen layout hints, keyed by screen name as shown, e.g. "SCREEN 6" */
   screens: Record<string, ScreenOverride>;
 }
 
 export interface WatchConfig {
-  /** Display name used in alerts */
-  venueName: string;
-  venue: string;
-  venueSlug: string;
   region: string;
-  /** YYYYMMDD */
+  venues: VenueConfig[];
+  /** Union of every venue's dates (YYYYMMDD) */
   dates: string[];
   /** Case-insensitive keywords matched against the movie title. Empty = every movie. */
   movies: string[];
@@ -51,7 +61,6 @@ const DEFAULT_SEATS: SeatConfig = {
   perRound: 3,
   minIntervalMinutes: 5,
   middle: { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 },
-  screens: {},
 };
 
 function parseSeats(raw: unknown): SeatConfig {
@@ -64,17 +73,20 @@ function parseSeats(raw: unknown): SeatConfig {
   frac(middle.rowsTo, 'rowsTo');
   frac(middle.centerWidth, 'centerWidth');
   if (middle.rowsFrom > middle.rowsTo) throw new Error('seats.middle.rowsFrom must be <= rowsTo');
-  const screens: Record<string, ScreenOverride> = {};
-  for (const [name, o] of Object.entries(r.screens ?? {})) screens[name.trim().toUpperCase()] = o;
   return {
     enabled: r.enabled ?? DEFAULT_SEATS.enabled,
     alertMiddle: r.alertMiddle ?? DEFAULT_SEATS.alertMiddle,
     perRound: r.perRound ?? DEFAULT_SEATS.perRound,
     minIntervalMinutes: r.minIntervalMinutes ?? DEFAULT_SEATS.minIntervalMinutes,
     middle,
-    screens,
   };
 }
+
+const parseScreens = (raw: unknown): Record<string, ScreenOverride> => {
+  const out: Record<string, ScreenOverride> = {};
+  for (const [name, o] of Object.entries((raw ?? {}) as Record<string, ScreenOverride>)) out[name.trim().toUpperCase()] = o;
+  return out;
+};
 
 const DEFAULT_POLL: PollConfig = {
   minSeconds: 60,
@@ -106,22 +118,46 @@ const requiredString = (v: unknown, field: string): string => {
   return v.trim();
 };
 
+const dateList = (v: unknown, field: string) => [...new Set(strings(v, field).map(normaliseDate))].sort();
+
 export function parseConfig(raw: unknown): WatchConfig {
   if (!raw || typeof raw !== 'object') throw new Error('config must be a JSON object');
   const c = raw as Record<string, unknown>;
-  const dates = [...new Set(strings(c.dates, 'dates').map(normaliseDate))].sort();
-  if (dates.length === 0) throw new Error('config.dates must list at least one date');
+  const topDates = dateList(c.dates, 'dates');
+  const topMovies = strings(c.movies, 'movies');
 
   const poll = { ...DEFAULT_POLL, ...((c.poll as Partial<PollConfig>) ?? {}) };
   if (poll.minSeconds > poll.maxSeconds) throw new Error('poll.minSeconds must be <= poll.maxSeconds');
 
+  // New format: venues[]. Old single-venue format (venue/venueSlug/venueName + seats.screens) still loads.
+  const rawVenues: Record<string, unknown>[] = Array.isArray(c.venues)
+    ? (c.venues as Record<string, unknown>[])
+    : c.venue
+      ? [{ name: c.venueName, code: c.venue, slug: c.venueSlug, screens: (c.seats as { screens?: unknown } | undefined)?.screens }]
+      : [];
+  if (rawVenues.length === 0) throw new Error('config.venues must list at least one venue');
+
+  const venues: VenueConfig[] = rawVenues.map((v, i) => {
+    const code = requiredString(v.code, `venues[${i}].code`).toUpperCase();
+    const dates = v.dates !== undefined ? dateList(v.dates, `venues[${i}].dates`) : topDates;
+    if (dates.length === 0) throw new Error(`no dates for venue ${code} (set config.dates or venues[${i}].dates)`);
+    return {
+      code,
+      name: typeof v.name === 'string' && v.name.trim() ? v.name.trim() : code,
+      slug: requiredString(v.slug, `venues[${i}].slug`),
+      dates,
+      movies: v.movies !== undefined ? strings(v.movies, `venues[${i}].movies`) : topMovies,
+      screens: parseScreens(v.screens),
+    };
+  });
+  const codes = venues.map((v) => v.code);
+  if (new Set(codes).size !== codes.length) throw new Error('config.venues has a duplicate code');
+
   return {
-    venueName: typeof c.venueName === 'string' && c.venueName.trim() ? c.venueName.trim() : requiredString(c.venue, 'venue'),
-    venue: requiredString(c.venue, 'venue'),
-    venueSlug: requiredString(c.venueSlug, 'venueSlug'),
     region: requiredString(c.region, 'region'),
-    dates,
-    movies: strings(c.movies, 'movies'),
+    venues,
+    dates: [...new Set(venues.flatMap((v) => v.dates))].sort(),
+    movies: topMovies,
     priorityFormats: strings(c.priorityFormats, 'priorityFormats'),
     poll,
     seats: parseSeats(c.seats),

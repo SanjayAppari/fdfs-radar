@@ -15,10 +15,10 @@ function screenLine(a: AlertShow): string {
   return [screen, attributes].filter(Boolean).map(escapeHtml).join(' · ') || '—';
 }
 
-function showBlock(title: string, a: AlertShow, link: string): string {
+function showBlock(title: string, a: AlertShow, venueName: string, link: string): string {
   const s = a.show;
   return [
-    `${a.priority ? '🔥 ' : ''}<b>${title}</b>`,
+    `${a.priority ? '🔥 ' : ''}<b>${title}</b> — ${escapeHtml(venueName)}`,
     `🎬 <b>${escapeHtml(s.movie)}</b>`,
     `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
     `🖥 ${screenLine(a)}`,
@@ -31,9 +31,9 @@ function showBlock(title: string, a: AlertShow, link: string): string {
 export function formatAlert(alert: Alert, venueName: string, link: string): string {
   switch (alert.kind) {
     case 'new_show':
-      return showBlock('NEW SHOW', alert.item, link);
+      return showBlock('NEW SHOW', alert.item, venueName, link);
     case 'avail_up':
-      return showBlock('SEATS AVAILABLE', alert.item, link);
+      return showBlock('SEATS AVAILABLE', alert.item, venueName, link);
     case 'date_open': {
       const anyPriority = alert.shows.some((s) => s.priority);
       const head = `${anyPriority ? '🔥 ' : ''}<b>BOOKINGS OPEN</b> — ${escapeHtml(venueName)}\n📅 ${prettyDate(alert.date)}`;
@@ -59,14 +59,14 @@ export function formatAlert(alert: Alert, venueName: string, link: string): stri
 }
 
 /** 🎯 alert: a watched show now has free seats in the middle of the hall. */
-export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, link: string): string {
+export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, venueName: string, link: string): string {
   const s = a.show;
   const rows = seats.rows
     .filter((r) => r.middleFree > 0)
     .map((r) => `${escapeHtml(r.row)}: ${r.middleFree}`)
     .join(', ');
   return [
-    `${a.priority ? '🔥 ' : ''}🎯 <b>MIDDLE SEATS</b>`,
+    `${a.priority ? '🔥 ' : ''}🎯 <b>MIDDLE SEATS</b> — ${escapeHtml(venueName)}`,
     `🎬 <b>${escapeHtml(s.movie)}</b>`,
     `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
     `🖥 ${screenLine(a)}`,

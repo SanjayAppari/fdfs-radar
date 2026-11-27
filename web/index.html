@@ -83,6 +83,11 @@
   main { padding: 18px 0 60px; }
   [hidden] { display: none !important; }
 
+  .venues { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .venuebtn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 14px; cursor: pointer; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+  .venuebtn .c { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--off-bg); color: var(--off); }
+  .venuebtn .c.ok { background: var(--ok-bg); color: var(--ok); }
+  .venuebtn[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
   .dates { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; scrollbar-width: thin; }
   .datebtn { flex: 0 0 auto; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 8px 12px; cursor: pointer; min-width: 128px; box-shadow: var(--shadow); }
   .datebtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
@@ -233,6 +238,7 @@
 
 <main class="wrap">
   <section id="tab-shows">
+    <div class="venues" id="venues"></div>
     <div class="dates" id="dates"></div>
     <div class="toolbar">
       <input type="search" id="showSearch" placeholder="Filter movie, screen, format…" style="flex:1;max-width:320px" />
@@ -289,6 +295,7 @@
     alerts: [],
     prevMiddle: new Map(),
     selectedDate: store.get('date', null),
+    selectedVenue: store.get('venue', null),
     tab: store.get('tab', 'shows'),
     prevShows: new Map(),   // sessionKey -> availStatus (for flash)
     changed: new Set(),
@@ -335,6 +342,7 @@
     if (s.availStatus === '0') return 'off';
     const r = seatInfo(s);
     if (!r) return 'pending';
+    if (r.layoutSource === 'unknown' && r.totalFree > 0) return 'unknown';
     if (r.middleOk) return 'mid';
     return r.totalFree > 0 ? 'edge' : 'full';
   };
@@ -356,8 +364,10 @@
     const st = state.status;
     const pill = $('#watcherPill');
     if (!st) { pill.className = 'pill off'; pill.lastElementChild.textContent = 'No watcher data'; return; }
-    $('#venue').textContent = st.venueName || st.venue || '';
-    const maxGap = ((st.pollSeconds?.[1] ?? 90) * Math.max(1, st.dates?.length ?? 1) + 120) * 1000;
+    const vs = st.venues || [];
+    $('#venue').textContent = vs.length === 1 ? vs[0].name : `${vs.length} venues`;
+    const jobs = vs.reduce((n, v) => n + (v.dates?.length || 0), 0) || 1;
+    const maxGap = ((st.pollSeconds?.[1] ?? 90) + jobs * 6 + 180) * 1000;
     const stale = st.state === 'ok' && st.lastPollAt && Date.now() - Date.parse(st.lastPollAt) > maxGap;
     const map = { ok: ['ok', 'Live'], starting: ['warn', 'Starting'], blocked: ['bad', 'Blocked'], error: ['warn', 'Error'], stopped: ['off', 'Stopped'] };
     let [cls, label] = map[st.state] || ['off', st.state];
@@ -369,12 +379,31 @@
   };
 
   // ---------- shows ----------
+  const venueList = () => {
+    const m = new Map();
+    (state.status?.venues || []).forEach((v) => m.set(v.code, v.name));
+    state.snapshots.forEach((s) => { if (!m.has(s.venue)) m.set(s.venue, s.venueName || s.venue); });
+    return [...m].map(([code, name]) => ({ code, name }));
+  };
   const allDates = () => {
-    const set = new Set(state.status?.dates || []);
-    state.snapshots.forEach((s) => set.add(s.date));
+    const v = (state.status?.venues || []).find((x) => x.code === state.selectedVenue);
+    const set = new Set(v?.dates || []);
+    state.snapshots.filter((s) => s.venue === state.selectedVenue).forEach((s) => set.add(s.date));
     return [...set].sort();
   };
-  const snapFor = (date) => state.snapshots.find((s) => s.date === date);
+  const snapFor = (date) => state.snapshots.find((s) => s.date === date && s.venue === state.selectedVenue);
+
+  const renderVenues = () => {
+    const vs = venueList();
+    if (!vs.some((v) => v.code === state.selectedVenue)) state.selectedVenue = vs[0]?.code ?? null;
+    $('#venues').hidden = vs.length < 2;
+    $('#venues').innerHTML = vs.map((v) => {
+      const mid = state.snapshots.filter((s) => s.venue === v.code && s.status === 'open')
+        .reduce((n, s) => n + s.shows.filter((x) => x.watched && seatState(x) === 'mid').length, 0);
+      return `<button class="venuebtn" data-v="${esc(v.code)}" aria-pressed="${v.code === state.selectedVenue}">${esc(v.name)}<span class="c ${mid ? 'ok' : ''}" title="Shows with free middle seats">${mid}</span></button>`;
+    }).join('');
+    document.querySelectorAll('.venuebtn').forEach((b) => (b.onclick = () => { state.selectedVenue = b.dataset.v; store.set('venue', b.dataset.v); renderShows(); }));
+  };
 
   const renderDates = () => {
     const dates = allDates();
@@ -403,12 +432,13 @@
   ['#showSearch', '#watchedOnly', '#availOnly', '#hotOnly'].forEach((id) => $(id).addEventListener('input', () => renderShows()));
 
   const renderShows = () => {
+    renderVenues();
     renderDates();
     const snap = snapFor(state.selectedDate);
     const statsEl = $('#stats'), moviesEl = $('#movies');
     if (!snap) {
       statsEl.innerHTML = '';
-      moviesEl.innerHTML = `<div class="empty"><b>No data for this date yet</b>The watcher hasn't polled it. Is <code>fdfs-radar</code> running?</div>`;
+      moviesEl.innerHTML = `<div class="empty"><b>No data for this date yet</b>The watcher hasn't polled this venue and date yet — it should appear within a round or two.</div>`;
       return;
     }
     const f = filters();
@@ -451,12 +481,13 @@
             list.map((s) => {
               const k = showKey(s);
               const st = seatState(s), r = seatInfo(s);
-              const cls = ['chip', { mid: 'avail', edge: 'edge', pending: 'pending' }[st] || '', s.priority ? 'hot' : '', state.changed.has(k) ? 'flash' : '', state.fresh.has(k) ? 'new' : ''].join(' ');
+              const cls = ['chip', { mid: 'avail', edge: 'edge', pending: 'pending', unknown: 'pending' }[st] || '', s.priority ? 'hot' : '', state.changed.has(k) ? 'flash' : '', state.fresh.has(k) ? 'new' : ''].join(' ');
               const line = st === 'mid' ? `${r.middleFree} middle · ${r.totalFree} free`
                 : st === 'edge' ? `front/side only · ${r.totalFree} free`
                 : st === 'full' ? 'no seats left'
-                : st === 'pending' ? 'checking seats…' : 'not bookable';
-              const title = { mid: 'Middle seats available', edge: 'Seats only at the front or sides', full: 'Sold out', pending: 'Bookable; seat map not checked yet', off: 'Not available' }[st];
+                : st === 'pending' ? 'checking seats…'
+                : st === 'unknown' ? `layout unknown · ${r.totalFree} free` : 'not bookable';
+              const title = { mid: 'Middle seats available', edge: 'Seats only at the front or sides', full: 'Sold out', pending: 'Bookable; seat map not checked yet', unknown: "Hall direction not known yet, so middle seats aren't claimed", off: 'Not available' }[st];
               return `<button class="${cls}" data-k="${esc(k)}" title="${title}"><div class="t">${esc(s.time)}</div><div class="sc">${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</div><div class="seatline">${line}</div></button>`;
             }).join('') + `</div></div>`;
         }).join('') + `</article>`;
@@ -477,7 +508,7 @@
         <dt>Event</dt><dd>${esc(s.eventName)}</dd>
         <dt>Format</dt><dd>${esc(s.dimension)} ${s.priority ? '🔥' : ''}</dd>
         <dt>Screen</dt><dd>${esc([s.screen, s.attributes].filter(Boolean).join(' · '))}</dd>
-        <dt>Status</dt><dd>${{ mid: '✅ Middle seats free', edge: '🟠 Front / side seats only', full: '⛔ Sold out', pending: '⏳ Bookable — seat map not checked yet', off: '⛔ Not available' }[seatState(s)]}</dd>
+        <dt>Status</dt><dd>${{ mid: '✅ Middle seats free', edge: '🟠 Front / side seats only', full: '⛔ Sold out', pending: '⏳ Bookable — seat map not checked yet', unknown: '❔ Hall direction not known yet', off: '⛔ Not available' }[seatState(s)]}</dd>
         <dt>Session</dt><dd><code>${esc(s.sessionId)}</code> · <code>${esc(s.eventCode)}</code></dd>
         <dt>Book</dt><dd><a href="${esc(snap.bookingUrl)}" target="_blank" rel="noopener">Open booking page ↗</a></dd>
       </dl>
@@ -500,9 +531,12 @@
       return `<div class="hrow ${good.has(row) ? 'good' : ''}"><span class="lbl">${esc(row)}</span><div class="sts">${sts}</div><span class="lbl">${x ? x.free : 0}</span></div>`;
     }).join('');
     const summary = `<dl class="kv"><dt>Free seats</dt><dd>${r.totalFree}</dd><dt>Middle free</dt><dd>${r.middleFree} (best block of ${r.bestBlock} together)</dd><dt>Middle rows</dt><dd>${esc(r.goodRows.join(' ') || '—')}</dd><dt>Checked</dt><dd><span data-ago="${esc(r.checkedAt)}">${ago(r.checkedAt)}</span></dd></dl>`;
-    const note = r.layoutSource === 'learned'
-      ? `<div class="note">Hall layout for ${esc(s.screen)} is a guess (rows ${esc(r.hallRows[0] || '')}–${esc(r.hallRows[r.hallRows.length - 1] || '')}, assuming row A is at the screen). Set <code>seats.screens["${esc(s.screen)}"].rows</code> in config.json — written from the screen to the back, e.g. "A-N" or "N-A".</div>`
-      : '';
+    const vn = esc(snapFor(s.date)?.venueName || s.venue);
+    const note = r.layoutSource === 'unknown'
+      ? `<div class="note">Can't tell which end of ${esc(s.screen)} faces the screen yet, so no seats are counted as middle. Add <code>screens["${esc(s.screen)}"].rows</code> for ${vn} in config.json (screen → back, e.g. "A-N" or "N-A").</div>`
+      : r.layoutSource === 'detected'
+        ? `<div class="note">Hall direction read from the site's seat map; rows ${esc(r.hallRows[0] || '')} (screen) → ${esc(r.hallRows[r.hallRows.length - 1] || '')} (back).</div>`
+        : '';
     return `<div class="meta" style="margin-bottom:4px">Seats as seen facing the screen (screen at the bottom; filled = free middle seat, outlined = other free seat)</div><div class="hall">${lines}<div class="screenbar"></div><div class="screenlbl">SCREEN</div></div>${note}${summary}`;
   };
 
@@ -585,7 +619,7 @@
     $('#alertCount').textContent = state.alerts.length ? String(state.alerts.length) : '';
     $('#alertsList').innerHTML = state.alerts.length ? state.alerts.map((a) => {
       const { wd, dm } = prettyDate(a.date);
-      return `<li><b class="k-${esc(a.kind)}">${a.priority ? '🔥 ' : ''}${kindLabel[a.kind] || esc(a.kind)}</b><span>${esc(a.summary)} <span class="meta">· ${wd} ${dm}</span></span><span class="when" title="${esc(a.at)}">${new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span></li>`;
+      return `<li><b class="k-${esc(a.kind)}">${a.priority ? '🔥 ' : ''}${kindLabel[a.kind] || esc(a.kind)}</b><span>${a.venueName ? `<b>${esc(a.venueName)}</b> · ` : ''}${esc(a.summary)} <span class="meta">· ${wd} ${dm}</span></span><span class="when" title="${esc(a.at)}">${new Date(a.at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span></li>`;
     }).join('') : `<li style="display:block;text-align:center;color:var(--muted);padding:32px">No alerts yet. They'll appear here as they're sent to Telegram.</li>`;
   };
 
@@ -638,7 +672,7 @@
         if (state.tab === 'redis' && $('#liveKeys').checked) loadKeysSoon();
       }
       if (ev.type === 'alert') {
-        toast((ev.entry.priority ? '🔥 ' : '') + ev.entry.summary);
+        toast((ev.entry.priority ? '🔥 ' : '') + (ev.entry.venueName ? ev.entry.venueName + ' · ' : '') + ev.entry.summary);
         loadStateSoon();
       }
     };

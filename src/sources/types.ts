@@ -74,18 +74,24 @@ export interface DateSnapshot {
   shows: Show[];
 }
 
+/** The bits of a venue a source needs to build requests and links. */
+export interface VenueRef {
+  code: string;
+  slug: string;
+}
+
 export interface ShowSource {
   readonly name: string;
   init(): Promise<void>;
-  fetchDate(date: string): Promise<DateSnapshot>;
+  fetchDate(venue: VenueRef, date: string): Promise<DateSnapshot>;
   /** Called after a block / repeated errors: refresh session, reload page, etc. */
   recover(): Promise<void>;
   /** Optional: seat-level availability for one show. */
   fetchSeatMap?(show: Show): Promise<SeatMap>;
   /** Optional: direct link to a show's seat map */
   seatMapUrl?(show: Show): string;
-  /** Public booking link for a date, used in alerts */
-  bookingUrl(date: string): string;
+  /** Public booking link for a venue + date, used in alerts */
+  bookingUrl(venue: VenueRef, date: string): string;
   close(): Promise<void>;
 }
 

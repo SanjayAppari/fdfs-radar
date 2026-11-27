@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyseSeats, expandRows, learnedHall, pickGoodRows, type MiddlePolicy } from '../src/seats.js';
+import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, pickGoodRows, seatDirection, type MiddlePolicy } from '../src/seats.js';
 import { formatMiddleSeats } from '../src/notify/telegram.js';
 import type { SeatRow, Show } from '../src/sources/types.js';
 
@@ -107,7 +107,7 @@ describe('analyseSeats', () => {
   });
 
   it('rows missing from the configured hall are appended at the back', () => {
-    const r = analyseSeats({ checkedAt: 't', rows: [row('Z', 10, () => true)] }, { hallRows: ['A', 'C'], layoutSource: 'learned', policy: POLICY });
+    const r = analyseSeats({ checkedAt: 't', rows: [row('Z', 10, () => true)] }, { hallRows: ['A', 'C'], layoutSource: 'detected', policy: POLICY });
     expect(r.hallRows).toEqual(['A', 'C', 'Z']);
   });
 });
@@ -120,9 +120,52 @@ describe('middle-seat alert message', () => {
       attributes: 'PCX Screen', time: '11:05 AM', showDateTime: '202612181105', availStatus: '1', categories: [],
     };
     const summary = analyseSeats({ checkedAt: 't', rows: [row('H', 20, (n) => n >= 9 && n <= 12)] }, { hallRows: HALL, layoutSource: 'config', policy: POLICY });
-    const text = formatMiddleSeats({ show, priority: true }, summary, 'https://example.test/seat-map');
-    for (const part of ['🔥 🎯 <b>MIDDLE SEATS</b>', 'Dune: Part Three', '2D', 'SCREEN 6 · PCX Screen', 'Fri, 18 Dec 2026', '11:05 AM', '<b>4</b> middle free (best 4 together)', 'Rows H: 4', 'href="https://example.test/seat-map"']) {
+    const text = formatMiddleSeats({ show, priority: true }, summary, 'AMB Cinemas', 'https://example.test/seat-map');
+    for (const part of ['🔥 🎯 <b>MIDDLE SEATS</b> — AMB Cinemas', 'Dune: Part Three', '2D', 'SCREEN 6 · PCX Screen', 'Fri, 18 Dec 2026', '11:05 AM', '<b>4</b> middle free (best 4 together)', 'Rows H: 4', 'href="https://example.test/seat-map"']) {
       expect(text).toContain(part);
     }
+  });
+});
+
+describe('hall direction from the site row order (top → bottom, screen at the bottom)', () => {
+  const r = (category: string, ...rows: string[]) => rows.map((row) => ({ row, category }));
+
+  it('Prasads SCREEN 6 lists D, C, B, A → A is at the screen', () => {
+    expect(detectRowOrder(r('GOLD', 'D', 'C', 'B', 'A'))).toBe('desc');
+    expect(hallFor(expandRows('A-N'), 'desc')[0]).toBe('A');
+  });
+
+  it('Prasads SCREEN 4 lists L, M, N → N is at the screen', () => {
+    expect(detectRowOrder(r('EXECUTIVE', 'L', 'M', 'N'))).toBe('asc');
+    expect(hallFor(expandRows('A-N'), 'asc')[0]).toBe('N');
+  });
+
+  it('AMB SCREEN 1: Platinum A, Gold B–P, Loungers Q → Q is at the screen', () => {
+    const rows = [...r('PLATINUM', 'A'), ...r('GOLD', 'K', 'L', 'M', 'N', 'O', 'P'), ...r('LOUNGERS', 'Q')];
+    expect(detectRowOrder(rows)).toBe('asc');
+  });
+
+  it('ignores order across seat classes and needs at least two rows', () => {
+    expect(detectRowOrder(r('X', 'C'))).toBeNull();
+    expect(detectRowOrder([...r('PLATINUM', 'A'), ...r('GOLD', 'B')])).toBeNull();
+  });
+
+  it('config specs imply a direction', () => {
+    expect(orderOfSpec('N-A')).toBe('asc');
+    expect(orderOfSpec('A-N')).toBe('desc');
+  });
+
+  it('unknown layouts never claim middle seats', () => {
+    const res = analyseSeats({ checkedAt: 't', rows: [row('H', 20, () => true)] }, { hallRows: HALL, layoutSource: 'unknown', policy: POLICY });
+    expect(res.middleOk).toBe(false);
+    expect(res.middleFree).toBe(0);
+  });
+});
+
+describe('seat direction', () => {
+  it('reads left → right numbering from the site list (incl. zero-padded numbers)', () => {
+    expect(seatDirection(['01', '02', '17'].map((n) => ({ n })))).toBe('asc');
+    expect(seatDirection(['22', '21', '01'].map((n) => ({ n })))).toBe('desc');
+    expect(seatDirection([{ n: '5' }])).toBeNull();
   });
 });

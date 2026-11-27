@@ -1,13 +1,106 @@
 {
-  "venueName": "Prasads Multiplex",
-  "venue": "PRHN",
-  "venueSlug": "prasads-multiplex-hyderabad",
   "region": "HYD",
+  "venues": [
+    {
+      "name": "Prasads Multiplex",
+      "code": "PRHN",
+      "slug": "prasads-multiplex-hyderabad",
+      "screens": {
+        "SCREEN 1": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 2": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 3": {
+          "rows": "N-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 4": {
+          "rows": "N-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 5": {
+          "rows": "M-A",
+          "leftToRight": "desc"
+        },
+        "SCREEN 6": {
+          "rows": "A-N",
+          "leftToRight": "desc"
+        }
+      }
+    },
+    {
+      "name": "AMB Cinemas",
+      "code": "AMBH",
+      "slug": "amb-cinemas-gachibowli",
+      "screens": {
+        "SCREEN 1": {
+          "rows": "Q-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 2": {
+          "rows": "Q-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 3": {
+          "rows": "Q-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 4": {
+          "rows": "I-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 5": {
+          "rows": "E-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 6": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 7": {
+          "rows": "I-A",
+          "leftToRight": "asc"
+        },
+        "AMB LUXE": {
+          "rows": "D-A",
+          "leftToRight": "asc"
+        }
+      }
+    },
+    {
+      "name": "ALLU Cinemas",
+      "code": "ALUC",
+      "slug": "allu-cinemas-kokapet",
+      "screens": {
+        "SCREEN 1": {
+          "rows": "S-A",
+          "leftToRight": "desc"
+        },
+        "SCREEN 2": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 3": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        },
+        "SCREEN 4": {
+          "rows": "M-A",
+          "leftToRight": "asc"
+        }
+      }
+    }
+  ],
   "dates": [
     "20261217",
     "20261218",
     "20261219",
-    "20261220"
+    "20261220",
+    "20261221"
   ],
   "movies": [
     "Avengers",
@@ -39,20 +132,6 @@
       "rowsTo": 0.85,
       "centerWidth": 0.6,
       "seatsTogether": 1
-    },
-    "screens": {
-      "SCREEN 1": {
-        "rows": "M-A"
-      },
-      "SCREEN 4": {
-        "rows": "N-A"
-      },
-      "SCREEN 5": {
-        "rows": "M-A"
-      },
-      "SCREEN 6": {
-        "rows": "A-N"
-      }
     }
   }
 }

@@ -1,7 +1,16 @@
 import type { BrowserContext, Page } from 'playwright';
 import { log } from '../log.js';
 import { todayIST } from '../time.js';
-import { BlockedError, SeatMapUnavailable, type DateSnapshot, type SeatMap, type SeatRow, type Show, type ShowSource } from './types.js';
+import {
+  BlockedError,
+  SeatMapUnavailable,
+  type DateSnapshot,
+  type SeatMap,
+  type SeatRow,
+  type Show,
+  type ShowSource,
+  type VenueRef,
+} from './types.js';
 
 // ---------------------------------------------------------------------------
 // Parser (pure, unit-tested against fixtures/)
@@ -93,8 +102,8 @@ function isTruthyFlag(v: unknown): boolean {
 export interface TicketingSourceOptions {
   /** e.g. https://in.example.com — kept in .env, not in the repo */
   baseUrl: string;
-  venue: string;
-  venueSlug: string;
+  /** Venue page opened once to establish the browser session */
+  homeVenue: VenueRef;
   region: string;
   userDataDir: string;
   headless: boolean;
@@ -120,9 +129,9 @@ export class TicketingSource implements ShowSource {
 
   constructor(private readonly opts: TicketingSourceOptions) {}
 
-  bookingUrl(date: string): string {
-    const { baseUrl, region, venueSlug, venue } = this.opts;
-    return `${baseUrl}/cinemas/${region}/${venueSlug}/buytickets/${venue}/${date}`;
+  bookingUrl(venue: VenueRef, date: string): string {
+    const { baseUrl, region } = this.opts;
+    return `${baseUrl}/cinemas/${region}/${venue.slug}/buytickets/${venue.code}/${date}`;
   }
 
   async init(): Promise<void> {
@@ -150,7 +159,7 @@ export class TicketingSource implements ShowSource {
 
   private async loadVenuePage(): Promise<void> {
     const page = this.page!;
-    const url = this.bookingUrl(todayIST());
+    const url = this.bookingUrl(this.opts.homeVenue, todayIST());
     log.info(`opening venue page ${url}`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await this.waitForChallenge(page);
@@ -168,14 +177,15 @@ export class TicketingSource implements ShowSource {
     log.warn('challenge page did not clear within 60s');
   }
 
-  async fetchDate(date: string): Promise<DateSnapshot> {
+  async fetchDate(venueRef: VenueRef, date: string): Promise<DateSnapshot> {
     const page = await this.ensurePage();
     if (Date.now() - this.lastLoadAt > this.opts.reloadEveryMs) {
       log.info('periodic reload to refresh cookies');
       await this.reload();
     }
 
-    const { venue, region } = this.opts;
+    const { region } = this.opts;
+    const venue = venueRef.code;
     const path =
       `/api/v3/mobile/showtimes/byvenue?dateCode=${date}` +
       `&venueCode=${encodeURIComponent(venue)}&regionCode=${encodeURIComponent(region)}&appCode=WEBV2`;
@@ -214,8 +224,8 @@ export class TicketingSource implements ShowSource {
   }
 
   seatMapUrl(show: Show): string {
-    const { baseUrl, region, venue } = this.opts;
-    return `${baseUrl}/movies/${region}/seat-layout/${show.eventCode}/${venue}/${show.sessionId}/${show.date}`;
+    const { baseUrl, region } = this.opts;
+    return `${baseUrl}/movies/${region}/seat-layout/${show.eventCode}/${show.venue}/${show.sessionId}/${show.date}`;
   }
 
   /**
@@ -307,8 +317,9 @@ export class TicketingSource implements ShowSource {
           const seats = await page.evaluate((row) => {
             const out: { n: string; free: boolean }[] = [];
             for (const b of document.querySelectorAll('button[aria-label]')) {
-              const m = /^(\S+)\s+seat\s+(\S+)\s+in row\s+(\S+)$/i.exec(b.getAttribute('aria-label') ?? '');
-              if (m && m[3] === row) out.push({ n: m[2]!, free: m[1]!.toLowerCase() === 'select' });
+              // "Select seat 8 in row C", "Select Best seat 10 in row G" (bestseller), "Booked seat 9 in row C"
+              const m = /^(.*?)\s*seat\s+(\S+)\s+in row\s+(\S+)$/i.exec(b.getAttribute('aria-label') ?? '');
+              if (m && m[3] === row && !/accessib/i.test(m[1]!)) out.push({ n: m[2]!, free: /^select\b/i.test(m[1]!) });
             }
             return out;
           }, letter);
@@ -318,7 +329,7 @@ export class TicketingSource implements ShowSource {
 
       return {
         source: this.name,
-        venue: this.opts.venue,
+        venue: show.venue,
         date: show.date,
         sessionId: show.sessionId,
         screen: show.screen,

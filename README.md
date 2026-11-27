@@ -1,6 +1,7 @@
 # FDFS Radar
 
-Watches Prasads Multiplex showtimes for the dates you care about and pings you on
+Watches showtimes at your chosen Hyderabad cinemas (Prasads Multiplex, AMB
+Cinemas, ALLU Cinemas, …) for the dates you care about and pings you on
 Telegram when:
 
 - a watched **date opens** for booking (one summary message),
@@ -76,17 +77,32 @@ message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy
 
 ```jsonc
 {
-  "venueName": "Prasads Multiplex",       // shown in alerts
-  "venue": "PRHN",
-  "venueSlug": "prasads-multiplex-hyderabad",
   "region": "HYD",
+  "venues": [
+    {
+      "name": "Prasads Multiplex",              // shown in alerts and the dashboard
+      "code": "PRHN",                           // from the venue page link …/buytickets/<CODE>/<date>
+      "slug": "prasads-multiplex-hyderabad",    // from the venue page link …/cinemas/<city>/<slug>/…
+      "screens": { "SCREEN 6": { "rows": "A-N" }, "SCREEN 4": { "rows": "N-A" } }
+    },
+    { "name": "AMB Cinemas", "code": "AMBH", "slug": "amb-cinemas-gachibowli",
+      "dates": ["20261219"], "movies": ["Dune"] }   // optional per-venue overrides
+  ],
   "dates": ["20261217", "2026-12-18"],    // YYYYMMDD or YYYY-MM-DD; past dates are skipped
   "movies": ["Avengers", "Dune"],         // case-insensitive keyword on the movie title; [] = all
   "priorityFormats": ["Infinity Vision", "PCX", "IMAX"],  // matched on Attributes or format
   "poll": { "minSeconds": 60, "maxSeconds": 90, "reloadEveryMinutes": 45,
-            "blockedBackoffMinMinutes": 5, "blockedBackoffMaxMinutes": 10 }
+            "blockedBackoffMinMinutes": 5, "blockedBackoffMaxMinutes": 10 },
+  "seats": { "enabled": true, "alertMiddle": true, "perRound": 3, "minIntervalMinutes": 5,
+             "middle": { "rowsFrom": 0.3, "rowsTo": 0.85, "centerWidth": 0.6, "seatsTogether": 1 } }
 }
 ```
+
+Each round polls every date at every venue that watches it (date by date,
+2–5 s apart), then reads a few seat maps, then pauses 60–90 s. More venues ×
+dates means longer rounds — trim per-venue `dates` if a venue only matters
+for some days. The old single-venue format (`venue`, `venueSlug`,
+`venueName`, `seats.screens`) still loads.
 
 Config is read at startup — restart after editing (`pm2 restart fdfs-radar`).
 
@@ -130,8 +146,8 @@ sit in a middle row *and* in the central part of that row:
 | `middle.centerWidth` | `0.6` | central share of each row |
 | `alertMiddle` | `true` | 🎯 Telegram alert when a watched show turns green (once per 30 min per show) |
 | `middle.seatsTogether` | `1` | adjacent seats needed (set 2+ when booking for a group) |
-| `screens["SCREEN 6"].rows` | `"A-N"` | full row range of a hall (`"A-H,J-N"` if a letter is skipped) |
-| `screens[...].goodRows` | — | explicit list of rows you like; skips the depth band |
+| `venues[].screens["SCREEN 6"].rows` | — | rows **from the screen to the back**: `"A-N"` (A at the screen) or `"N-A"` (N at the screen); `"A-H,J-N"` if a letter is skipped |
+| `venues[].screens[...].goodRows` | — | explicit list of rows you like; skips the depth band |
 
 The site only lists rows that still have free seats, so for screens without a
 `rows` entry the hall is **learned** (union of all rows seen, stored in

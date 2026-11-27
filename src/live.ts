@@ -2,7 +2,7 @@
  * Live view state for the dashboard. Written by the watcher, read by
  * src/web/server.ts. Purely informational: alerting never reads these keys.
  */
-import type { WatchConfig } from './config.js';
+import type { VenueConfig, WatchConfig } from './config.js';
 import { isPriority, isWatchedMovie, type Alert } from './diff.js';
 import { log } from './log.js';
 import type { SeatSummary } from './seats.js';
@@ -49,8 +49,7 @@ export interface WatcherStatus {
   since: string;
   startedAt: string;
   lastPollAt?: string;
-  venueName: string;
-  venue: string;
+  venues: { code: string; name: string; dates: string[]; movies: string[] }[];
   source: string;
   dates: string[];
   movies: string[];
@@ -67,6 +66,8 @@ export type LiveEvent =
 export interface AlertLogEntry {
   at: string;
   date: string;
+  venue?: string;
+  venueName?: string;
   kind: Alert['kind'] | 'middle_seats';
   priority: boolean;
   summary: string;
@@ -87,8 +88,7 @@ export class LiveFeed {
       state: 'starting',
       since: now,
       startedAt: now,
-      venueName: cfg.venueName,
-      venue: cfg.venue,
+      venues: cfg.venues.map((v) => ({ code: v.code, name: v.name, dates: v.dates, movies: v.movies })),
       source,
       dates: cfg.dates,
       movies: cfg.movies,
@@ -121,19 +121,19 @@ export class LiveFeed {
     });
   }
 
-  snapshot(snap: DateSnapshot, bookingUrl: string, changedKeys: string[]) {
+  snapshot(venue: VenueConfig, snap: DateSnapshot, bookingUrl: string, changedKeys: string[]) {
     return this.safe('snapshot', async () => {
       const key = snapshotKey(snap.source, snap.venue, snap.date);
       const live: LiveSnapshot = {
         source: snap.source,
         venue: snap.venue,
-        venueName: this.cfg.venueName,
+        venueName: venue.name,
         date: snap.date,
         status: snap.status,
         openDates: snap.openDates,
         fetchedAt: new Date().toISOString(),
         bookingUrl,
-        shows: snap.shows.map((s) => ({ ...s, watched: isWatchedMovie(s, this.cfg), priority: isPriority(s, this.cfg) })),
+        shows: snap.shows.map((s) => ({ ...s, watched: isWatchedMovie(s, venue), priority: isPriority(s, this.cfg) })),
       };
       await this.store.writeAll([{ key, value: JSON.stringify(live), ttlSeconds: SNAPSHOT_TTL }]);
       await this.emit({ type: 'snapshot', date: snap.date, venue: snap.venue, source: snap.source, keys: [key, ...changedKeys] });
@@ -157,10 +157,10 @@ export class LiveFeed {
     });
   }
 
-  alerts(alerts: Alert[]) {
+  alerts(venue: VenueConfig, alerts: Alert[]) {
     return this.safe('alerts', async () => {
       for (const a of alerts) {
-        const entry = toLogEntry(a);
+        const entry = { ...toLogEntry(a), venue: venue.code, venueName: venue.name };
         await this.store.pushCapped(ALERT_LOG_KEY, JSON.stringify(entry), 200);
         await this.emit({ type: 'alert', entry });
       }
