@@ -99,6 +99,16 @@ message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy
 }
 ```
 
+**Live vs cached data.** The showtimes API is normally served from a CDN
+cache that can be minutes old. The first two dates (or `poll.liveDates`) are
+fetched *live* every round, bypassing the cache; the rest come from the cache
+every `poll.otherEveryRounds` rounds. The site rate-limits live requests hard —
+a burst earned a **~1-hour lockout** (HTTP 429). On a 429 the watcher stops
+live requests until the site's deadline, keeps polling from the cache if that
+still works (otherwise sends nothing), and keeps seat checks running; the lock
+is remembered across restarts. Keep `poll.minSeconds` ≥ 20 and
+`poll.concurrency` = 1.
+
 Each round polls every date at every venue that watches it (date by date,
 2–5 s apart), then reads a few seat maps, then pauses 60–90 s. More venues ×
 dates means longer rounds — trim per-venue `dates` if a venue only matters

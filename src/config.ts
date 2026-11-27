@@ -14,6 +14,12 @@ export interface PollConfig {
   blockedBackoffMaxMinutes: number;
   /** Reload the venue page this often to refresh cookies */
   reloadEveryMinutes: number;
+  /** Showtime fetches run in parallel batches of this size (keep 1 when polling live) */
+  concurrency: number;
+  /** Dates fetched live (no CDN cache) every round; empty = the first two configured dates */
+  liveDates: string[];
+  /** Other dates are fetched (from the CDN cache) every N rounds */
+  otherEveryRounds: number;
 }
 
 export interface SeatConfig {
@@ -136,13 +142,16 @@ const parseScreens = (raw: unknown): Record<string, ScreenOverride> => {
 };
 
 const DEFAULT_POLL: PollConfig = {
-  minSeconds: 60,
-  maxSeconds: 90,
-  gapMinSeconds: 2,
-  gapMaxSeconds: 5,
+  minSeconds: 10,
+  maxSeconds: 15,
+  gapMinSeconds: 0.3,
+  gapMaxSeconds: 0.8,
   blockedBackoffMinMinutes: 5,
   blockedBackoffMaxMinutes: 10,
   reloadEveryMinutes: 45,
+  concurrency: 1,
+  liveDates: [],
+  otherEveryRounds: 6,
 };
 
 /** Accepts "20261217" or "2026-12-17". */
@@ -173,8 +182,14 @@ export function parseConfig(raw: unknown): WatchConfig {
   const topDates = dateList(c.dates, 'dates');
   const topMovies = strings(c.movies, 'movies');
 
-  const poll = { ...DEFAULT_POLL, ...((c.poll as Partial<PollConfig>) ?? {}) };
+  const rawPoll = (c.poll as Partial<PollConfig>) ?? {};
+  const poll: PollConfig = {
+    ...DEFAULT_POLL,
+    ...rawPoll,
+    liveDates: rawPoll.liveDates ? strings(rawPoll.liveDates, 'poll.liveDates').map(normaliseDate) : [],
+  };
   if (poll.minSeconds > poll.maxSeconds) throw new Error('poll.minSeconds must be <= poll.maxSeconds');
+  if (!(poll.concurrency >= 1 && poll.concurrency <= 6)) throw new Error('poll.concurrency must be 1–6');
 
   // New format: venues[]. Old single-venue format (venue/venueSlug/venueName + seats.screens) still loads.
   const rawVenues: Record<string, unknown>[] = Array.isArray(c.venues)

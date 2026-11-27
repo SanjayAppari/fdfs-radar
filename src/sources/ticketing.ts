@@ -119,6 +119,8 @@ export interface TicketingSourceOptions {
 interface PageFetchResult {
   status: number;
   contentType: string;
+  cache: string;
+  retryAfter: string;
   text: string;
 }
 
@@ -131,6 +133,10 @@ export class TicketingSource implements ShowSource {
   /** Third tab for the hot-show loop, so it never collides with the normal seat checks. */
   private hotPage?: Page;
   private lastLoadAt = 0;
+  /** Shared in-flight reload, so parallel fetches wait for one reload instead of racing it. */
+  private reloading?: Promise<void>;
+  /** Last cache status seen on the showtimes API (HIT/MISS/…), for diagnostics */
+  lastCacheStatus = '';
 
   constructor(private readonly opts: TicketingSourceOptions) {}
 
@@ -182,37 +188,55 @@ export class TicketingSource implements ShowSource {
     log.warn('challenge page did not clear within 60s');
   }
 
-  async fetchDate(venueRef: VenueRef, date: string): Promise<DateSnapshot> {
+  /** `live`: bypass the CDN cache (fresh data, counts towards the site's rate limit). */
+  async fetchDate(venueRef: VenueRef, date: string, live = true): Promise<DateSnapshot> {
     const page = await this.ensurePage();
+    if (this.reloading) await this.reloading;
     if (Date.now() - this.lastLoadAt > this.opts.reloadEveryMs) {
-      log.info('periodic reload to refresh cookies');
-      await this.reload();
+      this.reloading ??= (async () => {
+        log.info('periodic reload to refresh cookies');
+        await this.reload();
+      })().finally(() => {
+        this.reloading = undefined;
+      });
+      await this.reloading;
     }
 
     const { region } = this.opts;
     const venue = venueRef.code;
+    // The response is otherwise served from the CDN cache, often minutes old;
+    // a unique parameter makes every poll return live data.
     const path =
       `/api/v3/mobile/showtimes/byvenue?dateCode=${date}` +
-      `&venueCode=${encodeURIComponent(venue)}&regionCode=${encodeURIComponent(region)}&appCode=WEBV2`;
+      `&venueCode=${encodeURIComponent(venue)}&regionCode=${encodeURIComponent(region)}&appCode=WEBV2` +
+      (live ? `&_=${Date.now()}${Math.floor(Math.random() * 1000)}` : '');
 
     const res = await page.evaluate(
-      async ({ path, timeoutMs }): Promise<PageFetchResult> => {
+      async ({ path, timeoutMs, live }): Promise<PageFetchResult> => {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
           const r = await fetch(path, {
             credentials: 'include',
+            cache: live ? 'no-store' : 'default',
             headers: { accept: 'application/json, text/plain, */*' },
             signal: ctrl.signal,
           });
-          return { status: r.status, contentType: r.headers.get('content-type') ?? '', text: await r.text() };
+          return {
+            status: r.status,
+            contentType: r.headers.get('content-type') ?? '',
+            cache: r.headers.get('cf-cache-status') ?? '',
+            retryAfter: r.headers.get('retry-after') ?? '',
+            text: await r.text(),
+          };
         } finally {
           clearTimeout(t);
         }
       },
-      { path, timeoutMs: this.opts.fetchTimeoutMs ?? 30_000 },
+      { path, timeoutMs: this.opts.fetchTimeoutMs ?? 30_000, live },
     );
 
+    this.lastCacheStatus = res.cache;
     let json: unknown;
     try {
       json = JSON.parse(res.text);
@@ -223,7 +247,12 @@ export class TicketingSource implements ShowSource {
       );
     }
     if (res.status >= 400) {
-      throw new BlockedError(`HTTP ${res.status} with JSON body`, res.status);
+      const ra = Number.parseInt(res.retryAfter, 10);
+      throw new BlockedError(
+        res.status === 429 ? 'rate limited (HTTP 429)' : `HTTP ${res.status} with JSON body`,
+        res.status,
+        Number.isFinite(ra) ? ra : undefined,
+      );
     }
     return parseByVenue(json, date, { source: this.name, venue });
   }

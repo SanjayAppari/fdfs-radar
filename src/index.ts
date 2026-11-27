@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { loadConfig, loadEnv, type VenueConfig, type WatchConfig } from './config.js';
 import { diffSnapshot, isPriority, isWatchedMovie } from './diff.js';
-import { layoutKey, LiveFeed, seatsKey, type SeatResult } from './live.js';
+import { layoutKey, LiveFeed, seatsKey, snapshotKey, type SeatResult } from './live.js';
 import { log } from './log.js';
 import { formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
@@ -32,13 +32,17 @@ interface Ctx {
   seatChecked: Map<string, number>;
   /** Shows the fast loop is currently covering (skipped by the regular seat checks) */
   hot: Set<string>;
-  /** Both loops stay quiet until this time after a block */
+  /** All loops stay quiet until this time after a bot-check block */
   pausedUntil: number;
+  /** Live (uncached) showtimes are off until this time after a rate limit; cached polling continues */
+  liveBlockedUntil: number;
+  /** Even cached showtimes were refused: no showtime requests at all until this time */
+  showtimesPausedUntil: number;
 }
 
-async function pollDate(ctx: Ctx, venue: VenueConfig, date: string): Promise<void> {
+async function pollDate(ctx: Ctx, venue: VenueConfig, date: string, fresh = true): Promise<void> {
   const { cfg, source, store, notifier, live } = ctx;
-  const snap = await source.fetchDate(venue, date);
+  const snap = await source.fetchDate(venue, date, fresh);
   ctx.latest.set(`${venue.code}:${date}`, snap);
   const watchCfg = { movies: venue.movies, priorityFormats: cfg.priorityFormats };
   const result = await diffSnapshot(store, snap, watchCfg);
@@ -343,7 +347,18 @@ async function main() {
     venueByCode: new Map(cfg.venues.map((v) => [v.code, v])),
     hot: new Set(),
     pausedUntil: 0,
+    liveBlockedUntil: Number((await store.get('fdfs:live-blocked-until')) ?? 0),
+    showtimesPausedUntil: Number((await store.get('fdfs:showtimes-paused-until')) ?? 0),
   };
+
+  // Seed the show list from the last saved snapshots, so seat checks can run
+  // straight away (and keep running if showtimes are temporarily refused).
+  for (const v of cfg.venues) {
+    for (const date of v.dates) {
+      const raw = await store.get(snapshotKey(source.name, v.code, date));
+      if (raw) ctx.latest.set(`${v.code}:${date}`, JSON.parse(raw) as DateSnapshot);
+    }
+  }
   await live.setStatus('starting');
 
   for (const v of cfg.venues) {
@@ -353,22 +368,65 @@ async function main() {
 
   let blocked = false;
   let consecutiveErrors = 0;
-  const gap = () => sleep(randomBetween(cfg.poll.gapMinSeconds, cfg.poll.gapMaxSeconds) * 1000, stop.signal);
+  /** Adaptive slow-down after rate limiting: doubles on 429, eases back after clean rounds. */
+  let restScale = 1;
+  let cleanRounds = 0;
+  let round = 0;
+  const batchGap = () => sleep(randomBetween(cfg.poll.gapMinSeconds, cfg.poll.gapMaxSeconds) * 1000, stop.signal);
 
-  /** Runs one unit of work. Returns false when the round should be abandoned (blocked). */
+  /**
+   * Runs one unit of work. Returns false when blocked (the caller should drop
+   * the rest of its round). The first loop to hit a block sends the single
+   * alert, recovers the browser and sets the shared pause; the others just stop.
+   */
   async function step(label: string, fn: () => Promise<void>): Promise<boolean> {
     try {
       await fn();
       consecutiveErrors = 0;
-      if (blocked) {
+      if (blocked && Date.now() >= ctx.pausedUntil) {
         blocked = false;
         log.info('unblocked');
         await notifier.send(`✅ <b>Watcher recovered</b> — polling again.`).catch(() => {});
       }
       return true;
     } catch (err) {
+      if (err instanceof BlockedError && err.httpStatus === 429) {
+        // Rate limited. Only live (uncached) showtime polling stops; cached
+        // polling, seat checks and the fast loop carry on, so we're never blind.
+        const wait = (err.retryAfterSeconds ?? 600) * 1000;
+        const until = Date.now() + wait;
+        if (label.endsWith('(cached)') && until > ctx.showtimesPausedUntil) {
+          // Even cached data is refused: the whole API is locked for this connection. Stop
+          // sending showtime requests until the site's deadline (more requests may extend it).
+          ctx.showtimesPausedUntil = until;
+          await store.writeAll([{ key: 'fdfs:showtimes-paused-until', value: String(until), ttlSeconds: Math.ceil(wait / 1000) + 60 }]);
+          log.warn(`cached showtimes refused too (${label}); no showtime requests for ~${Math.round(wait / 60_000)} min`);
+          await live.setStatus('error', `rate limited — showtimes paused ~${Math.round(wait / 60_000)} min; seat checks continue`);
+        }
+        if (until > ctx.liveBlockedUntil) {
+          ctx.liveBlockedUntil = until;
+          await store.writeAll([{ key: 'fdfs:live-blocked-until', value: String(until), ttlSeconds: Math.ceil(wait / 1000) + 60 }]);
+          restScale = Math.max(restScale, 2); // come back gently when live data resumes
+          cleanRounds = 0;
+          const mins = Math.round(wait / 60_000);
+          log.warn(`rate limited (${label}); live data off for ~${mins} min, using cached data meanwhile`);
+          await live.setStatus('error', `rate limited — live data off ~${mins} min, using cached data`);
+          if (await store.setNX('fdfs:alerted:ratelimited', '1', 3600)) {
+            await notifier
+              .send(
+                `⏳ <b>Rate limited</b> by the site for ~${mins} min. Still watching using cached data ` +
+                  `(may be a few minutes behind); live data resumes automatically.`,
+              )
+              .catch(() => {});
+          }
+        }
+        return true;
+      }
       if (err instanceof BlockedError) {
-        log.warn(`blocked (${label}): ${err.message}`);
+        if (Date.now() < ctx.pausedUntil) return false; // another loop is already handling it
+        const backoff = randomBetween(cfg.poll.blockedBackoffMinMinutes, cfg.poll.blockedBackoffMaxMinutes) * 60_000;
+        ctx.pausedUntil = Date.now() + backoff;
+        log.warn(`blocked (${label}): ${err.message}; pausing all loops ${Math.round(backoff / 1000)}s`);
         await live.setStatus('blocked', err.message);
         if (!blocked) {
           blocked = true;
@@ -380,17 +438,13 @@ async function main() {
           }
         }
         await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
-        const backoff = randomBetween(cfg.poll.blockedBackoffMinMinutes, cfg.poll.blockedBackoffMaxMinutes) * 60_000;
-        ctx.pausedUntil = Date.now() + backoff;
-        log.info(`backing off ${Math.round(backoff / 1000)}s`);
-        if (!once) await sleep(backoff, stop.signal);
         return false;
       }
       consecutiveErrors++;
       log.error(`${label}: ${(err as Error).stack ?? err}`);
       await live.setStatus('error', `${label}: ${(err as Error).message}`);
-      if (consecutiveErrors >= 3) {
-        log.warn('3 consecutive errors, recovering source');
+      if (consecutiveErrors >= 5) {
+        log.warn('5 consecutive errors, recovering source');
         await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
         consecutiveErrors = 0;
       }
@@ -398,19 +452,53 @@ async function main() {
     }
   }
 
+  const waitIfPaused = async () => {
+    if (Date.now() < ctx.pausedUntil) await sleep(ctx.pausedUntil - Date.now() + 1_000, stop.signal);
+  };
+
+  /** Regular seat checks, in their own tab so they never delay showtime polling. */
+  async function seatLoop(): Promise<void> {
+    if (!cfg.seats.enabled || !source.fetchSeatMap) return;
+    await sleep(15_000, stop.signal);
+    while (!stop.signal.aborted) {
+      await waitIfPaused();
+      const due = await dueSeatChecks(ctx);
+      if (!due.length) {
+        await sleep(10_000, stop.signal);
+        continue;
+      }
+      for (const show of due) {
+        if (stop.signal.aborted || Date.now() < ctx.pausedUntil) break;
+        await step(`seats ${show.venue} ${show.date} ${show.sessionId}`, () => checkSeats(ctx, show));
+        await sleep(randomBetween(2, 4) * 1000, stop.signal);
+      }
+    }
+  }
+
+  const seats = once ? Promise.resolve() : seatLoop().catch((e) => log.error(`seat loop crashed: ${(e as Error).stack ?? e}`));
   const fast = once ? Promise.resolve() : hotLoop(ctx).catch((e) => log.error(`fast loop crashed: ${(e as Error).stack ?? e}`));
 
   try {
+    // Showtimes loop: every venue × date, a few in parallel, then a short rest.
     round: while (!stop.signal.aborted) {
-      if (Date.now() < ctx.pausedUntil) {
-        await sleep(ctx.pausedUntil - Date.now(), stop.signal);
+      await waitIfPaused();
+      if (Date.now() < ctx.showtimesPausedUntil) {
+        await sleep(Math.min(ctx.showtimesPausedUntil - Date.now() + 2_000, 60_000), stop.signal);
         continue;
       }
       const today = todayIST();
-      // Date-major order: each date is checked at every venue before moving on.
-      const jobs = cfg.dates
-        .filter((d) => d >= today)
-        .flatMap((date) => cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date })));
+      const upcoming = cfg.dates.filter((d) => d >= today);
+      const liveDates = new Set(cfg.poll.liveDates.length ? cfg.poll.liveDates : upcoming.slice(0, 2));
+      const othersDue = round % cfg.poll.otherEveryRounds === 0;
+      round++;
+      // Live dates every round (fresh data); the rest every few rounds from the CDN cache.
+      const liveOk = Date.now() >= ctx.liveBlockedUntil;
+      // While live data is off, poll every date from the cache each round (cheap, not rate limited).
+      const jobs = upcoming
+        .filter((d) => liveDates.has(d) || othersDue || !liveOk)
+        .flatMap((date) =>
+          cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date, fresh: liveOk && liveDates.has(date) })),
+        );
       if (jobs.length === 0) {
         log.warn('all configured dates are in the past — update config.json');
         if (once) break;
@@ -418,32 +506,45 @@ async function main() {
         continue;
       }
 
-      for (const [i, { venue, date }] of jobs.entries()) {
+      const started = Date.now();
+      for (let i = 0; i < jobs.length; i += cfg.poll.concurrency) {
         if (stop.signal.aborted) break round;
-        if (!(await step(`${venue.code} ${date}`, () => pollDate(ctx, venue, date)))) {
+        const batch = jobs.slice(i, i + cfg.poll.concurrency);
+        const results = await Promise.all(
+          batch.map(({ venue, date, fresh }) =>
+            step(`${venue.code} ${date}${fresh && Date.now() >= ctx.liveBlockedUntil ? '' : ' (cached)'}`, () =>
+              pollDate(ctx, venue, date, fresh && Date.now() >= ctx.liveBlockedUntil),
+            ),
+          ),
+        );
+        if (results.includes(false) || Date.now() < ctx.showtimesPausedUntil) {
           if (once) break round;
           continue round;
         }
-        if (i < jobs.length - 1) await gap();
+        if (i + cfg.poll.concurrency < jobs.length) await batchGap();
       }
-
-      if (cfg.seats.enabled && source.fetchSeatMap) {
-        for (const show of await dueSeatChecks(ctx)) {
-          if (stop.signal.aborted) break round;
-          await gap();
-          if (!(await step(`seats ${show.venue} ${show.date} ${show.sessionId}`, () => checkSeats(ctx, show)))) {
-            if (once) break round;
-            continue round;
-          }
+      if (once) {
+        // --once: also do one pass of seat checks so the command stays useful
+        if (cfg.seats.enabled && source.fetchSeatMap) {
+          for (const show of await dueSeatChecks(ctx)) await step(`seats ${show.sessionId}`, () => checkSeats(ctx, show));
         }
+        break;
       }
-
-      if (once) break;
-      await sleep(randomBetween(cfg.poll.minSeconds, cfg.poll.maxSeconds) * 1000, stop.signal);
+      if (liveOk && restScale > 1 && ++cleanRounds >= 10) {
+        restScale = Math.max(1, restScale / 1.5);
+        cleanRounds = 0;
+      }
+      const live = jobs.filter((j) => j.fresh).length;
+      log.info(
+        `showtimes round: ${jobs.length} fetches (${live} live, ${jobs.length - live} cached) in ${((Date.now() - started) / 1000).toFixed(1)}s` +
+          (liveOk ? (restScale > 1 ? `, slowed ×${restScale.toFixed(1)}` : '') : `, live data off for ${Math.round((ctx.liveBlockedUntil - Date.now()) / 60_000)} min`),
+      );
+      // Cached rounds can run at the normal pace; only live rounds are slowed.
+      await sleep(randomBetween(cfg.poll.minSeconds, cfg.poll.maxSeconds) * (liveOk ? restScale : 1) * 1000, stop.signal);
     }
   } finally {
     stop.abort();
-    await fast;
+    await Promise.all([fast, seats]);
     await live.setStatus('stopped');
     await source.close();
     await store.close();

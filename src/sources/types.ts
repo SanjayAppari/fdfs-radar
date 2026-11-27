@@ -83,7 +83,8 @@ export interface VenueRef {
 export interface ShowSource {
   readonly name: string;
   init(): Promise<void>;
-  fetchDate(venue: VenueRef, date: string): Promise<DateSnapshot>;
+  /** `live` = bypass caches for fresh data (default true) */
+  fetchDate(venue: VenueRef, date: string, live?: boolean): Promise<DateSnapshot>;
   /** Called after a block / repeated errors: refresh session, reload page, etc. */
   recover(): Promise<void>;
   /** Optional: seat-level availability for one show. */
@@ -100,6 +101,8 @@ export class BlockedError extends Error {
   constructor(
     message: string,
     readonly httpStatus?: number,
+    /** Seconds the site asked us to wait (Retry-After), when it said so */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'BlockedError';

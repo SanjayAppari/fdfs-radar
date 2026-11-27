@@ -116,11 +116,16 @@
     "Laser"
   ],
   "poll": {
-    "minSeconds": 60,
-    "maxSeconds": 90,
+    "minSeconds": 20,
+    "maxSeconds": 30,
     "reloadEveryMinutes": 45,
     "blockedBackoffMinMinutes": 5,
-    "blockedBackoffMaxMinutes": 10
+    "blockedBackoffMaxMinutes": 10,
+    "gapMinSeconds": 1.5,
+    "gapMaxSeconds": 3,
+    "concurrency": 1,
+    "liveDates": [],
+    "otherEveryRounds": 6
   },
   "seats": {
     "enabled": true,
