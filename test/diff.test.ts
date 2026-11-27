@@ -178,3 +178,27 @@ describe('priority + formatting', () => {
     expect(msgs.every((m) => m.length <= 3900)).toBe(true);
   });
 });
+
+describe('new screen / new format tags', () => {
+  it('flags a new show on a screen and format the movie did not have that day', async () => {
+    const store = new MemoryStore();
+    await run(store, snapFrom());
+    const r = await run(
+      store,
+      snapFrom((d) => {
+        const child = avengers3d(d);
+        child.ShowTimes.push({ ...child.ShowTimes[0], SessionId: '999101', ScreenName: 'SCREEN 9', Attributes: 'IMAX', AvailStatus: '1' });
+        child.ShowTimes.push({ ...child.ShowTimes[0], SessionId: '999102', ScreenName: 'SCREEN 3', AvailStatus: '1' });
+      }),
+    );
+    const byId = new Map(r.alerts.filter((a) => a.kind === 'new_show').map((a) => [a.kind === 'new_show' ? a.item.show.sessionId : '', a]));
+    const imax = byId.get('999101')!;
+    const same = byId.get('999102')!;
+    if (imax.kind !== 'new_show' || same.kind !== 'new_show') throw new Error();
+    expect(imax.item.newScreen).toBe(true);
+    expect(imax.item.newFormat).toBe(true);
+    expect(same.item.newScreen).toBe(false);
+    expect(same.item.newFormat).toBe(false);
+    expect(formatAlert(imax, 'AMB Cinemas', 'u')).toContain('🆕 new screen for this movie · new format for this movie');
+  });
+});

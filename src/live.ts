@@ -70,7 +70,7 @@ export interface AlertLogEntry {
   date: string;
   venue?: string;
   venueName?: string;
-  kind: Alert['kind'] | 'middle_seats';
+  kind: Alert['kind'] | 'middle_seats' | 'rows_opened';
   priority: boolean;
   summary: string;
 }

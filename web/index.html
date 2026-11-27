@@ -645,7 +645,7 @@
   };
 
   // ---------- alerts ----------
-  const kindLabel = { new_show: 'NEW SHOW', avail_up: 'SEATS', date_open: 'OPEN', middle_seats: '🎯 MIDDLE' };
+  const kindLabel = { new_show: 'NEW SHOW', avail_up: 'SEATS', date_open: 'OPEN', middle_seats: '🎯 MIDDLE', rows_opened: '🔓 ROWS' };
   const renderAlerts = () => {
     $('#alertCount').textContent = state.alerts.length ? String(state.alerts.length) : '';
     $('#alertsList').innerHTML = state.alerts.length ? state.alerts.map((a) => {

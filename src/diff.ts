@@ -16,6 +16,10 @@ export interface ShowRecord {
 export interface AlertShow {
   show: Show;
   priority: boolean;
+  /** New show is on a screen this movie had no other show on (that date) */
+  newScreen?: boolean;
+  /** New show is in a format this movie had no other show in (that date) */
+  newFormat?: boolean;
 }
 
 export type Alert =
@@ -133,6 +137,16 @@ export async function diffSnapshot(
     summarised = true;
   }
 
+  // What each movie already had (shows seen before) — to flag new screens/formats.
+  const known = new Map<string, { screens: Set<string>; formats: Set<string> }>();
+  snap.shows.forEach((s, i) => {
+    if (!prevRecords[i]) return;
+    const k = known.get(s.movie) ?? { screens: new Set(), formats: new Set() };
+    k.screens.add(s.screen);
+    k.formats.add(`${s.dimension}|${s.attributes}`);
+    known.set(s.movie, k);
+  });
+
   snap.shows.forEach((show, i) => {
     writes.push({ key: sessionKeys[i]!, value: JSON.stringify(toRecord(show)), ttlSeconds: STATE_TTL });
     if (isBaseline || summarised || !watched(show)) return;
@@ -140,7 +154,16 @@ export async function diffSnapshot(
     const prev = prevRecords[i];
     if (!prev) {
       if (newAlerted[i] === null) {
-        alerts.push({ kind: 'new_show', date, item: wrap(show) });
+        const k = known.get(show.movie);
+        alerts.push({
+          kind: 'new_show',
+          date,
+          item: {
+            ...wrap(show),
+            newScreen: !k?.screens.has(show.screen),
+            newFormat: !k?.formats.has(`${show.dimension}|${show.attributes}`),
+          },
+        });
         dedupeKeys.push({ key: newKeys[i]!, ttl: DEDUPE_TTL });
       }
     } else if (prev.availStatus !== '1' && show.availStatus === '1') {

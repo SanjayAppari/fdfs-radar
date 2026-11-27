@@ -3,7 +3,7 @@ import { loadConfig, loadEnv, type VenueConfig, type WatchConfig } from './confi
 import { diffSnapshot, isPriority, isWatchedMovie } from './diff.js';
 import { layoutKey, LiveFeed, seatsKey, type SeatResult } from './live.js';
 import { log } from './log.js';
-import { formatAlert, formatMiddleSeats, packMessages, TelegramNotifier } from './notify/telegram.js';
+import { formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
@@ -74,7 +74,7 @@ async function resetSoldOutSeats(ctx: Ctx, snap: DateSnapshot): Promise<void> {
     const r = raw ? (JSON.parse(raw) as SeatResult) : null;
     if (!r?.middleOk) return [];
     log.info(`seats ${soldOut[i]!.venue} ${soldOut[i]!.date} ${soldOut[i]!.time} ${soldOut[i]!.screen}: sold out, clearing middle-seat state`);
-    const cleared: SeatResult = { ...r, middleOk: false, middleFree: 0, totalFree: 0, bestBlock: 0, checkedAt: new Date().toISOString() };
+    const cleared: SeatResult = { ...r, middleOk: false, middleFree: 0, totalFree: 0, bestBlock: 0, rows: [], checkedAt: new Date().toISOString() };
     return [{ key: keys[i]!, value: JSON.stringify(cleared), ttlSeconds: 14 * 86_400 }];
   });
   await ctx.store.writeAll(writes);
@@ -200,23 +200,43 @@ async function checkSeats(ctx: Ctx, show: Show, slot: 'seat' | 'hot' = 'seat'): 
       kind = 'middle-more';
     }
   }
-  if (title) {
-    const dedupeKey = `fdfs:${source.name}:${venue.code}:alerted:${kind}:${show.date}:${show.sessionId}`;
-    if ((await store.get(dedupeKey)) === null) {
-      const priority = isPriority(show, cfg);
-      const link = source.seatMapUrl?.(show) ?? source.bookingUrl(venue, show.date);
-      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, venue.name, link, title));
-      await store.setNX(dedupeKey, '1', cfg.seats.alertCooldownMinutes * 60);
-      log.info(`${title} alert sent for ${venue.code} ${show.sessionId}${slot === 'hot' ? ' (fast loop)' : ''}`);
-      await live.logAlert({
-        date: show.date,
-        venue: venue.code,
-        venueName: venue.name,
-        kind: 'middle_seats',
-        priority,
-        summary: `${title === 'MIDDLE SEATS' ? 'Middle seats' : title}: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen} — ${summary.middleFree} free`,
-      });
+  // 🔓 Rows that had no free seats at the last check and now do (needs a previous check).
+  let opened: OpenedRow[] = [];
+  if (cfg.seats.alertRowsOpened && prev) {
+    const before = new Map(prev.rows.map((r) => [r.row, r.free]));
+    const rowKeys = summary.rows
+      .filter((r) => r.free >= cfg.seats.rowUnlockMinSeats && !(before.get(r.row) ?? 0))
+      .map((r) => ({ r, key: `fdfs:${source.name}:${venue.code}:alerted:row:${show.date}:${show.sessionId}:${r.row}` }));
+    const seen = rowKeys.length ? await store.mget(rowKeys.map((x) => x.key)) : [];
+    const fresh = rowKeys.filter((_, i) => seen[i] === null);
+    opened = fresh.map(({ r }) => ({ row: r.row, free: r.free, middleFree: r.middleFree }));
+    if (opened.length) {
+      for (const { key } of fresh) await store.setNX(key, '1', cfg.seats.alertCooldownMinutes * 60);
     }
+  }
+
+  const middleKey = title ? `fdfs:${source.name}:${venue.code}:alerted:${kind}:${show.date}:${show.sessionId}` : null;
+  const sendMiddle = middleKey !== null && (await store.get(middleKey)) === null;
+  if (sendMiddle || opened.length) {
+    const priority = isPriority(show, cfg);
+    const link = source.seatMapUrl?.(show) ?? source.bookingUrl(venue, show.date);
+    const text = sendMiddle
+      ? formatMiddleSeats({ show, priority }, summary, venue.name, link, title!, opened)
+      : formatRowsOpened({ show, priority }, summary, opened, venue.name, link);
+    await ctx.notifier.send(text);
+    if (sendMiddle) await store.setNX(middleKey!, '1', cfg.seats.alertCooldownMinutes * 60);
+    const what = [sendMiddle ? title : '', opened.length ? `rows opened ${opened.map((r) => r.row).join(',')}` : ''].filter(Boolean).join(' + ');
+    log.info(`alert sent (${what}) for ${venue.code} ${show.sessionId}${slot === 'hot' ? ' (fast loop)' : ''}`);
+    await live.logAlert({
+      date: show.date,
+      venue: venue.code,
+      venueName: venue.name,
+      kind: sendMiddle ? 'middle_seats' : 'rows_opened',
+      priority,
+      summary:
+        `${sendMiddle ? (title === 'MIDDLE SEATS' ? 'Middle seats' : title) : 'Rows opened'}: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen}` +
+        (opened.length ? ` — rows ${opened.map((r) => `${r.row} (${r.free})`).join(', ')}` : ` — ${summary.middleFree} middle free`),
+    });
   }
 
   await live.seats(

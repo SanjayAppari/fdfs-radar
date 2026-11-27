@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, pickGoodRows, seatDirection, type MiddlePolicy } from '../src/seats.js';
-import { formatMiddleSeats } from '../src/notify/telegram.js';
+import { formatMiddleSeats, formatRowsOpened } from '../src/notify/telegram.js';
 import type { SeatRow, Show } from '../src/sources/types.js';
 
 const POLICY: MiddlePolicy = { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 };
@@ -187,5 +187,20 @@ describe('pan merge', () => {
     const m = mergeGeometry(a, b, -shift + 30);
     expect(m.lines[0]!.xs).toEqual(all);
     expect(m.lines[0]!.kinds).toBe(kinds.join(''));
+  });
+});
+
+describe('rows opened alert', () => {
+  it('lists each newly opened row with free and middle counts', () => {
+    const show: Show = {
+      source: 'ticketing', venue: 'ALUC', date: '20261221', sessionId: '7521', movie: 'Avengers: Doomsday',
+      eventName: 'Avengers: Doomsday (MS-Infinity Vsn 3D) - English', eventCode: 'ET1', dimension: 'MS-Infinity Vsn 3d', screen: 'SCREEN 2',
+      attributes: 'LASER 4K ATMOS', time: '10:00 AM', showDateTime: '202612211000', availStatus: '1', categories: [],
+    };
+    const summary = analyseSeats({ checkedAt: 't', rows: [row('H', 20, () => true)] }, { hallRows: HALL, layoutSource: 'config', policy: POLICY });
+    const text = formatRowsOpened({ show, priority: true }, summary, [{ row: 'H', free: 20, middleFree: 12 }, { row: 'K', free: 3, middleFree: 0 }], 'ALLU Cinemas', 'https://x/seat');
+    for (const part of ['🔥 🔓 <b>ROWS OPENED</b> — ALLU Cinemas', 'Rows opened: <b>H</b> 20 free (12 middle), <b>K</b> 3 free', 'Mon, 21 Dec 2026', 'href="https://x/seat"']) {
+      expect(text).toContain(part);
+    }
   });
 });

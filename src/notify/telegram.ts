@@ -17,8 +17,10 @@ function screenLine(a: AlertShow): string {
 
 function showBlock(title: string, a: AlertShow, venueName: string, link: string): string {
   const s = a.show;
+  const tags = [a.newScreen ? 'new screen for this movie' : '', a.newFormat ? 'new format for this movie' : ''].filter(Boolean);
   return [
     `${a.priority ? '🔥 ' : ''}<b>${title}</b> — ${escapeHtml(venueName)}`,
+    ...(tags.length ? [`🆕 ${tags.join(' · ')}`] : []),
     `🎬 <b>${escapeHtml(s.movie)}</b>`,
     `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
     `🖥 ${screenLine(a)}`,
@@ -59,7 +61,38 @@ export function formatAlert(alert: Alert, venueName: string, link: string): stri
 }
 
 /** 🎯 alert: a watched show now has free seats in the middle of the hall. */
-export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, venueName: string, link: string, title = 'MIDDLE SEATS'): string {
+export interface OpenedRow {
+  row: string;
+  free: number;
+  middleFree: number;
+}
+
+const openedLine = (rows: OpenedRow[]) =>
+  `🔓 Rows opened: ${rows.map((r) => `<b>${escapeHtml(r.row)}</b> ${r.free} free${r.middleFree ? ` (${r.middleFree} middle)` : ''}`).join(', ')}`;
+
+/** 🔓 alert: rows that had no free seats at the last check now have some. */
+export function formatRowsOpened(a: AlertShow, seats: SeatSummary, rows: OpenedRow[], venueName: string, link: string): string {
+  const s = a.show;
+  return [
+    `${a.priority ? '🔥 ' : ''}🔓 <b>ROWS OPENED</b> — ${escapeHtml(venueName)}`,
+    `🎬 <b>${escapeHtml(s.movie)}</b>`,
+    `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
+    `🖥 ${screenLine(a)}`,
+    `📅 ${prettyDate(s.date)}  ⏰ ${escapeHtml(s.time)}`,
+    openedLine(rows),
+    `💺 ${seats.totalFree} free in total · ${seats.middleFree} middle`,
+    `🔗 <a href="${escapeHtml(link)}">Open seat map</a>`,
+  ].join('\n');
+}
+
+export function formatMiddleSeats(
+  a: AlertShow,
+  seats: SeatSummary,
+  venueName: string,
+  link: string,
+  title = 'MIDDLE SEATS',
+  opened: OpenedRow[] = [],
+): string {
   const s = a.show;
   const rows = seats.rows
     .filter((r) => r.middleFree > 0)
@@ -73,6 +106,7 @@ export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, venueName: s
     `📅 ${prettyDate(s.date)}  ⏰ ${escapeHtml(s.time)}`,
     `💺 <b>${seats.middleFree}</b> middle free (best ${seats.bestBlock} together) · ${seats.totalFree} free in total`,
     rows ? `↕️ Rows ${rows}` : '',
+    opened.length ? openedLine(opened) : '',
     `🔗 <a href="${escapeHtml(link)}">Open seat map</a>`,
   ]
     .filter(Boolean)

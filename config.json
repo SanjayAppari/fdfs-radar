@@ -125,6 +125,8 @@
   "seats": {
     "enabled": true,
     "alertMiddle": true,
+    "alertRowsOpened": true,
+    "rowUnlockMinSeats": 1,
     "perRound": 3,
     "minIntervalMinutes": 5,
     "middle": {

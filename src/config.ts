@@ -25,6 +25,9 @@ export interface SeatConfig {
   /** Re-read a show's seat map at most this often */
   minIntervalMinutes: number;
   middle: MiddlePolicy;
+  /** 🔓 alert when a row with no free seats at the last check now has at least `rowUnlockMinSeats` */
+  alertRowsOpened: boolean;
+  rowUnlockMinSeats: number;
   /** 🎯 alert again when an already-green show gains at least this many middle seats (0 = off) */
   alertIncrease: number;
   /** Repeat 🎯 alerts for the same show at most this often */
@@ -79,6 +82,8 @@ const DEFAULT_SEATS: SeatConfig = {
   perRound: 3,
   minIntervalMinutes: 5,
   middle: { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 },
+  alertRowsOpened: true,
+  rowUnlockMinSeats: 1,
   alertIncrease: 4,
   alertCooldownMinutes: 10,
   fast: { enabled: true, maxShows: 4, intervalSeconds: 20, venues: [], dates: [], formats: [] },
@@ -100,6 +105,8 @@ function parseSeats(raw: unknown): SeatConfig {
     perRound: r.perRound ?? DEFAULT_SEATS.perRound,
     minIntervalMinutes: r.minIntervalMinutes ?? DEFAULT_SEATS.minIntervalMinutes,
     middle,
+    alertRowsOpened: r.alertRowsOpened ?? DEFAULT_SEATS.alertRowsOpened,
+    rowUnlockMinSeats: r.rowUnlockMinSeats ?? DEFAULT_SEATS.rowUnlockMinSeats,
     alertIncrease: r.alertIncrease ?? DEFAULT_SEATS.alertIncrease,
     alertCooldownMinutes: r.alertCooldownMinutes ?? DEFAULT_SEATS.alertCooldownMinutes,
     fast: parseFast((r as { fast?: unknown }).fast),

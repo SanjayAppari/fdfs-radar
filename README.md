@@ -5,7 +5,8 @@ Cinemas, ALLU Cinemas, …) for the dates you care about and pings you on
 Telegram when:
 
 - a watched **date opens** for booking (one summary message),
-- a **new show** (new SessionId) appears for a watched movie,
+- a **new show** (new SessionId) appears for a watched movie — tagged 🆕 when
+  it's on a screen or in a format that movie didn't have that day,
 - a show goes from **not available → available** (`AvailStatus` 0 → 1).
 - 🎯 a show gets **free seats in the middle of the hall** (see *Seat checks*;
   toggle with `seats.alertMiddle`).
@@ -167,6 +168,8 @@ a higher chance of a Cloudflare challenge (both loops pause together on a block)
 
 | Alert setting | Default | Meaning |
 | --- | --- | --- |
+| `alertRowsOpened` | `true` | 🔓 alert when a row with no free seats at the last check now has some (any row, middle or not) |
+| `rowUnlockMinSeats` | `1` | minimum free seats in a newly opened row to alert (raise to ignore single cancellations) |
 | `alertIncrease` | `4` | also alert when an already-green show gains this many middle seats (a row was released); `0` = off |
 | `alertCooldownMinutes` | `10` | repeat 🎯 alerts for the same show at most this often |
 
