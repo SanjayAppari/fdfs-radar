@@ -1,0 +1,890 @@
+{
+  "Date": "20261217",
+  "Event": [
+    {
+      "EventTitle": "Avengers: Doomsday",
+      "EventDuration": "155",
+      "ChildEvents": [
+        {
+          "Event_strIsDefault": "Y",
+          "EventSyn": "",
+          "EventRAT": "0",
+          "EventSEQ": "50",
+          "EventTrailer": "https://www.youtube.com/watch?v=irVNGjRFZGk",
+          "EventName": "Avengers: Doomsday - English",
+          "EventGenre": {
+            "Action": [],
+            "Adventure": [],
+            "Fantasy": [],
+            "GenreMeta": [],
+            "Sci-Fi": []
+          },
+          "ApplicableTimeFilters": [
+            "tf1"
+          ],
+          "EventCensor": "UA16+",
+          "EventGroup": "EG00437704",
+          "EventCode": "ET00439706",
+          "EventImageCode": "avengers-doomsday-et00439706-1794895811",
+          "EventDimension": "2D",
+          "ShowTimes": [
+            {
+              "ShowDateTime": "202612170800",
+              "CategoryRange": "",
+              "Attributes": "",
+              "ApplicableTimeFilters": [
+                "tf1"
+              ],
+              "MinPrice": "295.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612170810",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259087",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "08:00 AM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0005",
+                  "AdditionalData": "",
+                  "CurPrice": "295.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": "EXECUTIVE",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "295.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf3"
+              ],
+              "ShowTimeCode": "0800",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 5"
+            }
+          ],
+          "IsMovieClubEnabled": "N",
+          "EventIsAtmosEnabled": "N",
+          "Event_strPopUpDesc": "",
+          "EventLanguage": "English",
+          "EventUrl": "avengers-doomsday",
+          "ApplicablePriceFilters": [
+            "pf3"
+          ]
+        },
+        {
+          "Event_strIsDefault": "N",
+          "EventSyn": "",
+          "EventRAT": "0",
+          "EventSEQ": "50",
+          "EventTrailer": "https://www.youtube.com/watch?v=irVNGjRFZGk",
+          "EventName": "Avengers: Doomsday (MS-Infinity Vsn 3D) - English",
+          "EventGenre": {
+            "Action": [],
+            "Adventure": [],
+            "Fantasy": [],
+            "GenreMeta": [],
+            "Sci-Fi": []
+          },
+          "ApplicableTimeFilters": [
+            "tf1",
+            "tf2",
+            "tf3",
+            "tf4"
+          ],
+          "EventCensor": "UA16+",
+          "EventGroup": "EG00437704",
+          "EventCode": "ET00526306",
+          "EventImageCode": "avengers-doomsday-et00526306-1794895899",
+          "EventDimension": "MS-Infinity Vsn 3d",
+          "ShowTimes": [
+            {
+              "ShowDateTime": "202612170800",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf1"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612170810",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259079",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "08:00 AM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "0800",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            },
+            {
+              "ShowDateTime": "202612170800",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf1"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612170810",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259278",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "08:00 AM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "0800",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 1"
+            },
+            {
+              "ShowDateTime": "202612171055",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf1"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612171105",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259352",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "10:55 AM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "1055",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 1"
+            },
+            {
+              "ShowDateTime": "202612171105",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf1"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612171115",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259080",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "11:05 AM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "1105",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            },
+            {
+              "ShowDateTime": "202612171410",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf2"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612171420",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259081",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "02:10 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "1410",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            },
+            {
+              "ShowDateTime": "202612171715",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf3"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612171725",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259082",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "05:15 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "1715",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            },
+            {
+              "ShowDateTime": "202612172020",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf4"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612172030",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259083",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "08:20 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "2020",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            },
+            {
+              "ShowDateTime": "202612172325",
+              "CategoryRange": "",
+              "Attributes": "Infinity Vision 3D",
+              "ApplicableTimeFilters": [
+                "tf4"
+              ],
+              "MinPrice": "325.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612172335",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259084",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "0",
+              "ShowTime": "11:25 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0007",
+                  "AdditionalData": "",
+                  "CurPrice": "325.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "0",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": " EXECUTIVE + 3D Glass",
+                  "CategoryRange": ""
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "325.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf4"
+              ],
+              "ShowTimeCode": "2325",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 3"
+            }
+          ],
+          "IsMovieClubEnabled": "N",
+          "EventIsAtmosEnabled": "N",
+          "Event_strPopUpDesc": "",
+          "EventLanguage": "English",
+          "EventUrl": "avengers-doomsday-ms-infinity-vsn-3d",
+          "ApplicablePriceFilters": [
+            "pf4"
+          ]
+        }
+      ],
+      "EventSynopsis": "",
+      "EventGenre": "Action,Adventure,Fantasy,Sci-Fi",
+      "ApplicablePriceFilters": [
+        "pf3",
+        "pf4"
+      ],
+      "ApplicableTimeFilters": [
+        "tf1",
+        "tf2",
+        "tf3",
+        "tf4"
+      ],
+      "EventCensor": "",
+      "EventGroup": "EG00437704"
+    },
+    {
+      "EventTitle": "Dune: Part Three",
+      "EventDuration": "150",
+      "ChildEvents": [
+        {
+          "Event_strIsDefault": "N",
+          "EventSyn": "",
+          "EventRAT": "0",
+          "EventSEQ": "50",
+          "EventTrailer": "",
+          "EventName": "Dune: Part Three (HDR By Barco) - English",
+          "EventGenre": {
+            "Action": [],
+            "Adventure": [],
+            "Drama": [],
+            "GenreMeta": [],
+            "Sci-Fi": []
+          },
+          "ApplicableTimeFilters": [
+            "tf3"
+          ],
+          "EventCensor": "UA16+",
+          "EventGroup": "EG00489079",
+          "EventCode": "ET00526390",
+          "EventImageCode": "dune-part-three-et00526390-1795186889",
+          "EventDimension": "HDR By Barco",
+          "ShowTimes": [
+            {
+              "ShowDateTime": "202612171800",
+              "CategoryRange": "1|2|3|4|5|6",
+              "Attributes": "",
+              "ApplicableTimeFilters": [
+                "tf3"
+              ],
+              "MinPrice": "295.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612171810",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259268",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "1",
+              "ShowTime": "06:00 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0005",
+                  "AdditionalData": "",
+                  "CurPrice": "295.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000002",
+                  "AvailStatus": "1",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": "EXECUTIVE",
+                  "CategoryRange": "1|2|3|4|5|6"
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "295.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf3"
+              ],
+              "ShowTimeCode": "1800",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 4"
+            }
+          ],
+          "IsMovieClubEnabled": "N",
+          "EventIsAtmosEnabled": "N",
+          "Event_strPopUpDesc": "",
+          "EventLanguage": "English",
+          "EventUrl": "dune-part-three-hdr-by-barco",
+          "ApplicablePriceFilters": [
+            "pf3"
+          ]
+        },
+        {
+          "Event_strIsDefault": "Y",
+          "EventSyn": "",
+          "EventRAT": "0",
+          "EventSEQ": "50",
+          "EventTrailer": "",
+          "EventName": "Dune: Part Three - English",
+          "EventGenre": {
+            "Action": [],
+            "Adventure": [],
+            "Drama": [],
+            "GenreMeta": [],
+            "Sci-Fi": []
+          },
+          "ApplicableTimeFilters": [
+            "tf4"
+          ],
+          "EventCensor": "UA16+",
+          "EventGroup": "EG00489079",
+          "EventCode": "ET00491771",
+          "EventImageCode": "dune-part-three-et00491771-1794656996",
+          "EventDimension": "2D",
+          "ShowTimes": [
+            {
+              "ShowDateTime": "202612172020",
+              "CategoryRange": "1|2|3|4|5|6",
+              "Attributes": "PCX Screen",
+              "ApplicableTimeFilters": [
+                "tf4"
+              ],
+              "MinPrice": "295.00",
+              "UpdatedMinPrice": null,
+              "SessionCopQuota": "0",
+              "SessionCodFlag": "N",
+              "CutOffDateTime": "202612172030",
+              "ChildSeats": "N",
+              "BestAvailableSeats": 0,
+              "CutOffFlag": "1",
+              "SessionCodQuota": "0",
+              "SessionId": "259271",
+              "BestBuy": "",
+              "SessionCopFlag": "N",
+              "AvailStatus": "1",
+              "ShowTime": "08:20 PM",
+              "SessionPopUpDesc": "",
+              "Categories": [
+                {
+                  "PriceCode": "0006",
+                  "AdditionalData": "",
+                  "CurPrice": "295.00",
+                  "UpdatedPrice": null,
+                  "AreaCatCode": "0000000003",
+                  "AvailStatus": "1",
+                  "BestAvailableSeats": "0",
+                  "SeatLayout": "Y",
+                  "PriceDesc": "GOLD",
+                  "CategoryRange": "1|2|3|4|5|6"
+                }
+              ],
+              "ShowDateCode": "20261217",
+              "SessionUnpaidFlag": "N",
+              "CoupleSeats": "N",
+              "SessionUnpaidQuota": "0",
+              "IsAtmosEnabled": "N",
+              "MaxPrice": "295.00",
+              "UpdatedMaxPrice": null,
+              "Offers": null,
+              "ApplicablePriceFilters": [
+                "pf3"
+              ],
+              "ShowTimeCode": "2020",
+              "SessionSubTitle": "",
+              "SessionSubTitleAcronym": "",
+              "showCutOffBottomsheet": true,
+              "ScreenName": "SCREEN 6"
+            }
+          ],
+          "IsMovieClubEnabled": "N",
+          "EventIsAtmosEnabled": "N",
+          "Event_strPopUpDesc": "",
+          "EventLanguage": "English",
+          "EventUrl": "dune-part-three",
+          "ApplicablePriceFilters": [
+            "pf3"
+          ]
+        }
+      ],
+      "EventSynopsis": "",
+      "EventGenre": "Action,Adventure,Drama,Sci-Fi",
+      "ApplicablePriceFilters": [
+        "pf3"
+      ],
+      "ApplicableTimeFilters": [
+        "tf3",
+        "tf4"
+      ],
+      "EventCensor": "",
+      "EventGroup": "EG00489079"
+    }
+  ],
+  "Venues": {
+    "CouponIsAllowed": "Y",
+    "Message": "<font color=#ff0000><strong>``Accessibility Information:\nAs per the Ministry of Information and Broadcasting (MIB) advisory, accessibility features such as Audio Description (AD), Closed Captions (CC), Same Language Captioning (SLC), and Indian Sign Language (ISL) may not be available for all movies or shows. Where these features are available, they will be indicated on the movie synopsis page.``</strong></font><br><strong><font color=``ff0000``>1. Pre-booked Food & Beverages have to be collected by the patrons from the F&B counter by showing a valid booking ID.</font><br>\n2. For 3D movies, 3D glasses charges will be charged extra.<br>\n3. No entry for those under 18 years for ``A`` rated movies.\n<strong><font color=``ff0000``>Below points are for Large Screen</font><br>\n1. 3D Glasses Provided To You Are Unique, Expensive And Sanitized For Your Safety. <br> \n2. These Glasses Are Specially Made For 3D Viewing Only On Our Big Screen, Not Suitable For Other Screens <br>\n 3. Please Handle Glasses With Care, In Case Of Loss/Damage Cost Of Rs.2000/- Will Be Charged <br>\n 4. Please Return The Glasses To Our Staff Before Exiting The Auditorium <br>\n 5. Please Don`t Leave The 3D Glasses At The Seats <br>\n 6. 3D Glasses Are Chargeable Over And Above The Ticket Price <br>\n 7. For One Ticket, One 3D Glasses Will Be Distributed.<br>\n 8. Children above the age of 3 years and above require tickets.",
+    "ShowSeatNo": "Y",
+    "VenueCode": "PRHN",
+    "TicketCancellation": "N",
+    "VenueInfoMessage": "",
+    "SocialDistancingCompliant": "N",
+    "UnpaidReleaseCutOff": "1 hr ",
+    "VenueLegends": ";WC;CAR;FOD;",
+    "UnpaidReleaseCutOffJson": [],
+    "CinemaCodFlag": "N",
+    "CinemaIsOnlineNoTransactionMsg": "",
+    "IsFullLayout": "Y",
+    "VenueAdd": "Khairtabad, IMAX Road, NTR Marg, Near NTR Gardens, Hyderabad, Telangana 500063, India",
+    "VenueApp": "VS",
+    "MessageType": "AC",
+    "VenueLat": "17.4128",
+    "CodReleaseCutOff": "10 hrs ",
+    "IsFoodSales": "Y",
+    "VenueName": "Prasads Multiplex: Hyderabad",
+    "VenueCompName": "PRASADS",
+    "VenueComp": "PRSD",
+    "ETicket": "Y",
+    "CinemaUnpaidFlag": "N",
+    "CinemaCopFlag": "N",
+    "BestSeatsAvail": "N",
+    "VenueLong": "78.4658",
+    "CopReleaseCutOff": "3 hrs ",
+    "MessageTitle": "Terms & Conditions",
+    "MTicket": "Y",
+    "CoupleSeats": "N",
+    "UnpaidMaxQuantity": "4",
+    "IsFullSeatLayout": "Y",
+    "IsNewCinema": "N",
+    "IsMultiplex": "Y",
+    "isVenueDown": false,
+    "isRelianceExclusive": "N",
+    "PopUpDescription": "",
+    "faqContent": {
+      "heading": "",
+      "content": null
+    },
+    "SeatSelector": null,
+    "eticket": "",
+    "mticket": "",
+    "seatLegends": [
+      {
+        "status": "1",
+        "label": "Available",
+        "infoText": "",
+        "selectionText": ""
+      },
+      {
+        "status": "88",
+        "label": "Selected",
+        "infoText": "",
+        "selectionText": ""
+      },
+      {
+        "status": "2",
+        "label": "Sold",
+        "infoText": "",
+        "selectionText": ""
+      }
+    ],
+    "showTncOnSeatLayout": true,
+    "cta": {
+      "additionalData": {
+        "bottomSheetData": {
+          "styles": {
+            "image-container-style": {
+              "margin": "12,0,14,0",
+              "padding": "0,16,0,16"
+            },
+            "content-warning-bottomsheet-title-container": {
+              "margin": "4,16,0,16",
+              "padding": "8,0,0,0"
+            },
+            "content-warning-bottomsheet-title": {
+              "fontColor": "#333333",
+              "font": "large-medium"
+            },
+            "content-warning-image": {
+              "contentScale": "fit"
+            }
+          },
+          "ctaData": [
+            {
+              "text": "Continue",
+              "style": "primary",
+              "cta": {
+                "id": "launchSeatLayout",
+                "type": "router"
+              }
+            }
+          ],
+          "widgets": [
+            {
+              "type": "text",
+              "data": [
+                {
+                  "components": [
+                    {
+                      "type": "text",
+                      "styleId": "content-warning-bottomsheet-title",
+                      "text": "This movie is rated \"A\"  "
+                    }
+                  ]
+                }
+              ],
+              "styleId": "content-warning-bottomsheet-title-container"
+            },
+            {
+              "type": "image",
+              "data": [
+                {
+                  "styleId": "content-warning-image",
+                  "imageUrl": "https://assets-in.bmscdn.com/moviesmaster/synopsis/contentwarning.png"
+                }
+              ],
+              "aspectRatio": "5.29",
+              "styleId": "image-container-style"
+            }
+          ]
+        }
+      },
+      "type": "bottomsheet"
+    }
+  }
+}
