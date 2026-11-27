@@ -56,19 +56,35 @@ async function pollDate(ctx: Ctx, date: string): Promise<void> {
 
 const showKey = (s: Show) => `${s.date}:${s.sessionId}`;
 
-/** Watched, bookable shows whose seat map is due, oldest check first. */
-function dueSeatChecks(ctx: Ctx): Show[] {
-  const { cfg, latest, seatChecked } = ctx;
+/**
+ * Watched, bookable shows whose seat map is due. Never-checked shows go first
+ * (and get a bigger per-round budget), then the longest-unchecked. Last-check
+ * times fall back to Redis so a restart doesn't reset the queue.
+ */
+async function dueSeatChecks(ctx: Ctx): Promise<Show[]> {
+  const { cfg, latest, seatChecked, store, source } = ctx;
   const today = todayIST();
-  const minGap = cfg.seats.minIntervalMinutes * 60_000;
-  const now = Date.now();
-  return [...latest.values()]
+  const candidates = [...latest.values()]
     .filter((s) => s.status === 'open' && s.date >= today)
     .flatMap((s) => s.shows)
-    .filter((s) => isWatchedMovie(s, cfg) && s.availStatus !== '0' && s.eventCode)
-    .filter((s) => now - (seatChecked.get(showKey(s)) ?? 0) >= minGap)
-    .sort((a, b) => (seatChecked.get(showKey(a)) ?? 0) - (seatChecked.get(showKey(b)) ?? 0))
-    .slice(0, cfg.seats.perRound);
+    .filter((s) => isWatchedMovie(s, cfg) && s.availStatus !== '0' && s.eventCode);
+
+  const unknown = candidates.filter((s) => !seatChecked.has(showKey(s)));
+  if (unknown.length) {
+    const stored = await store.mget(unknown.map((s) => seatsKey(source.name, cfg.venue, s.date, s.sessionId)));
+    unknown.forEach((s, i) => {
+      const at = stored[i] ? Date.parse((JSON.parse(stored[i]!) as { checkedAt?: string }).checkedAt ?? '') : Number.NaN;
+      seatChecked.set(showKey(s), Number.isFinite(at) ? at : 0);
+    });
+  }
+
+  const minGap = cfg.seats.minIntervalMinutes * 60_000;
+  const now = Date.now();
+  const due = candidates
+    .filter((s) => now - seatChecked.get(showKey(s))! >= minGap)
+    .sort((a, b) => seatChecked.get(showKey(a))! - seatChecked.get(showKey(b))!);
+  const neverChecked = due.some((s) => seatChecked.get(showKey(s)) === 0);
+  return due.slice(0, neverChecked ? cfg.seats.perRound * 2 : cfg.seats.perRound);
 }
 
 async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
@@ -232,7 +248,7 @@ async function main() {
       }
 
       if (cfg.seats.enabled && source.fetchSeatMap) {
-        for (const show of dueSeatChecks(ctx)) {
+        for (const show of await dueSeatChecks(ctx)) {
           if (stop.signal.aborted) break round;
           await gap();
           if (!(await step(`seats ${show.date} ${show.sessionId}`, () => checkSeats(ctx, show)))) {
