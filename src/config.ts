@@ -18,6 +18,8 @@ export interface PollConfig {
 
 export interface SeatConfig {
   enabled: boolean;
+  /** Telegram alert when a watched show gets free middle seats */
+  alertMiddle: boolean;
   /** Max seat maps to read per polling round */
   perRound: number;
   /** Re-read a show's seat map at most this often */
@@ -45,6 +47,7 @@ export interface WatchConfig {
 
 const DEFAULT_SEATS: SeatConfig = {
   enabled: true,
+  alertMiddle: true,
   perRound: 3,
   minIntervalMinutes: 5,
   middle: { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 },
@@ -65,6 +68,7 @@ function parseSeats(raw: unknown): SeatConfig {
   for (const [name, o] of Object.entries(r.screens ?? {})) screens[name.trim().toUpperCase()] = o;
   return {
     enabled: r.enabled ?? DEFAULT_SEATS.enabled,
+    alertMiddle: r.alertMiddle ?? DEFAULT_SEATS.alertMiddle,
     perRound: r.perRound ?? DEFAULT_SEATS.perRound,
     minIntervalMinutes: r.minIntervalMinutes ?? DEFAULT_SEATS.minIntervalMinutes,
     middle,

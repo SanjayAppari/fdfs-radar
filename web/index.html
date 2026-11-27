@@ -197,7 +197,7 @@
   .alerts li { padding: 10px 14px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; }
   .alerts li:last-child { border-bottom: 0; }
   .alerts .when { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .k-new_show { color: var(--accent); } .k-avail_up { color: var(--ok); } .k-date_open { color: #2563eb; }
+  .k-new_show { color: var(--accent); } .k-middle_seats { color: var(--ok); } .k-avail_up { color: var(--ok); } .k-date_open { color: #2563eb; }
 
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(140%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; z-index: 40; transition: transform .25s; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
   .toast.show { transform: translateX(-50%) translateY(0); }
@@ -580,7 +580,7 @@
   };
 
   // ---------- alerts ----------
-  const kindLabel = { new_show: 'NEW SHOW', avail_up: 'SEATS', date_open: 'OPEN' };
+  const kindLabel = { new_show: 'NEW SHOW', avail_up: 'SEATS', date_open: 'OPEN', middle_seats: '🎯 MIDDLE' };
   const renderAlerts = () => {
     $('#alertCount').textContent = state.alerts.length ? String(state.alerts.length) : '';
     $('#alertsList').innerHTML = state.alerts.length ? state.alerts.map((a) => {

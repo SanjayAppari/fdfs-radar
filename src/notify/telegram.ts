@@ -1,4 +1,5 @@
 import type { Alert, AlertShow } from '../diff.js';
+import type { SeatSummary } from '../seats.js';
 import { log } from '../log.js';
 import { prettyDate, sleep } from '../time.js';
 
@@ -55,6 +56,27 @@ export function formatAlert(alert: Alert, venueName: string, link: string): stri
       return `${head}\n\n${sections.join('\n\n')}\n\n🔗 <a href="${escapeHtml(link)}">Book now</a>`;
     }
   }
+}
+
+/** 🎯 alert: a watched show now has free seats in the middle of the hall. */
+export function formatMiddleSeats(a: AlertShow, seats: SeatSummary, link: string): string {
+  const s = a.show;
+  const rows = seats.rows
+    .filter((r) => r.middleFree > 0)
+    .map((r) => `${escapeHtml(r.row)}: ${r.middleFree}`)
+    .join(', ');
+  return [
+    `${a.priority ? '🔥 ' : ''}🎯 <b>MIDDLE SEATS</b>`,
+    `🎬 <b>${escapeHtml(s.movie)}</b>`,
+    `🎞 ${escapeHtml(s.eventName)}${s.dimension ? ` — <i>${escapeHtml(s.dimension)}</i>` : ''}`,
+    `🖥 ${screenLine(a)}`,
+    `📅 ${prettyDate(s.date)}  ⏰ ${escapeHtml(s.time)}`,
+    `💺 <b>${seats.middleFree}</b> middle free (best ${seats.bestBlock} together) · ${seats.totalFree} free in total`,
+    rows ? `↕️ Rows ${rows}` : '',
+    `🔗 <a href="${escapeHtml(link)}">Open seat map</a>`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Pack blocks into as few messages as possible under the size limit. */

@@ -67,7 +67,7 @@ export type LiveEvent =
 export interface AlertLogEntry {
   at: string;
   date: string;
-  kind: Alert['kind'];
+  kind: Alert['kind'] | 'middle_seats';
   priority: boolean;
   summary: string;
 }
@@ -145,6 +145,15 @@ export class LiveFeed {
       const key = seatsKey(result.source, result.venue, result.date, result.sessionId);
       await this.store.writeAll([{ key, value: JSON.stringify(result), ttlSeconds: 14 * 86_400 }]);
       await this.emit({ type: 'seats', date: result.date, sessionId: result.sessionId, keys: [key, ...extraKeys] });
+    });
+  }
+
+  /** Record an alert that didn't come from the diff (e.g. middle seats). */
+  logAlert(entry: Omit<AlertLogEntry, 'at'>) {
+    return this.safe('alert log', async () => {
+      const full: AlertLogEntry = { at: new Date().toISOString(), ...entry };
+      await this.store.pushCapped(ALERT_LOG_KEY, JSON.stringify(full), 200);
+      await this.emit({ type: 'alert', entry: full });
     });
   }
 

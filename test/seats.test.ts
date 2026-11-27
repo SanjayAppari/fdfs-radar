@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyseSeats, expandRows, learnedHall, pickGoodRows, type MiddlePolicy } from '../src/seats.js';
-import type { SeatRow } from '../src/sources/types.js';
+import { formatMiddleSeats } from '../src/notify/telegram.js';
+import type { SeatRow, Show } from '../src/sources/types.js';
 
 const POLICY: MiddlePolicy = { rowsFrom: 0.3, rowsTo: 0.85, centerWidth: 0.6, seatsTogether: 1 };
 const HALL = expandRows('A-N');
@@ -108,5 +109,20 @@ describe('analyseSeats', () => {
   it('rows missing from the configured hall are appended at the back', () => {
     const r = analyseSeats({ checkedAt: 't', rows: [row('Z', 10, () => true)] }, { hallRows: ['A', 'C'], layoutSource: 'learned', policy: POLICY });
     expect(r.hallRows).toEqual(['A', 'C', 'Z']);
+  });
+});
+
+describe('middle-seat alert message', () => {
+  it('shows movie, format, screen, date, time, middle counts, rows and seat-map link', () => {
+    const show: Show = {
+      source: 'ticketing', venue: 'PRHN', date: '20261218', sessionId: '259257', movie: 'Dune: Part Three',
+      eventName: 'Dune: Part Three - English', eventCode: 'ET1', dimension: '2D', screen: 'SCREEN 6',
+      attributes: 'PCX Screen', time: '11:05 AM', showDateTime: '202612181105', availStatus: '1', categories: [],
+    };
+    const summary = analyseSeats({ checkedAt: 't', rows: [row('H', 20, (n) => n >= 9 && n <= 12)] }, { hallRows: HALL, layoutSource: 'config', policy: POLICY });
+    const text = formatMiddleSeats({ show, priority: true }, summary, 'https://example.test/seat-map');
+    for (const part of ['🔥 🎯 <b>MIDDLE SEATS</b>', 'Dune: Part Three', '2D', 'SCREEN 6 · PCX Screen', 'Fri, 18 Dec 2026', '11:05 AM', '<b>4</b> middle free (best 4 together)', 'Rows H: 4', 'href="https://example.test/seat-map"']) {
+      expect(text).toContain(part);
+    }
   });
 });

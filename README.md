@@ -6,6 +6,8 @@ Telegram when:
 - a watched **date opens** for booking (one summary message),
 - a **new show** (new SessionId) appears for a watched movie,
 - a show goes from **not available → available** (`AvailStatus` 0 → 1).
+- 🎯 a show gets **free seats in the middle of the hall** (see *Seat checks*;
+  toggle with `seats.alertMiddle`).
 
 Shows in a priority format (Infinity Vision, PCX, IMAX…) are prefixed with 🔥.
 The first time a date is seen it is recorded as a **baseline** with no alerts.
@@ -126,6 +128,7 @@ sit in a middle row *and* in the central part of that row:
 | --- | --- | --- |
 | `middle.rowsFrom` / `rowsTo` | `0.3` / `0.85` | depth band, 0 = front row (A, nearest the screen), 1 = back row |
 | `middle.centerWidth` | `0.6` | central share of each row |
+| `alertMiddle` | `true` | 🎯 Telegram alert when a watched show turns green (once per 30 min per show) |
 | `middle.seatsTogether` | `1` | adjacent seats needed (set 2+ when booking for a group) |
 | `screens["SCREEN 6"].rows` | `"A-N"` | full row range of a hall (`"A-H,J-N"` if a letter is skipped) |
 | `screens[...].goodRows` | — | explicit list of rows you like; skips the depth band |

@@ -1,9 +1,9 @@
 import 'dotenv/config';
 import { loadConfig, loadEnv, type WatchConfig } from './config.js';
-import { diffSnapshot, isWatchedMovie } from './diff.js';
-import { layoutKey, LiveFeed } from './live.js';
+import { diffSnapshot, isPriority, isWatchedMovie } from './diff.js';
+import { layoutKey, LiveFeed, seatsKey, type SeatResult } from './live.js';
 import { log } from './log.js';
-import { formatAlert, packMessages, TelegramNotifier } from './notify/telegram.js';
+import { formatAlert, formatMiddleSeats, packMessages, TelegramNotifier } from './notify/telegram.js';
 import { analyseSeats, expandRows, learnedHall } from './seats.js';
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
@@ -113,6 +113,28 @@ async function checkSeats(ctx: Ctx, show: Show): Promise<void> {
     `seats ${show.date} ${show.time} ${show.screen} (${show.sessionId}): ${summary.totalFree} free, ` +
       `${summary.middleFree} middle, best block ${summary.bestBlock}${summary.middleOk ? ' ✓' : ''}`,
   );
+
+  // 🎯 Alert on the transition to "has middle seats". The new result is only
+  // stored after Telegram accepts the message, so a failed send is retried.
+  const sKey = seatsKey(source.name, cfg.venue, show.date, show.sessionId);
+  const prev = JSON.parse((await store.get(sKey)) ?? 'null') as SeatResult | null;
+  if (cfg.seats.alertMiddle && summary.middleOk && !prev?.middleOk) {
+    const dedupeKey = `fdfs:${source.name}:${cfg.venue}:alerted:middle:${show.date}:${show.sessionId}`;
+    if ((await store.get(dedupeKey)) === null) {
+      const priority = isPriority(show, cfg);
+      const link = source.seatMapUrl?.(show) ?? source.bookingUrl(show.date);
+      await ctx.notifier.send(formatMiddleSeats({ show, priority }, summary, link));
+      await store.setNX(dedupeKey, '1', 30 * 60);
+      log.info(`middle-seat alert sent for ${show.sessionId}`);
+      await live.logAlert({
+        date: show.date,
+        kind: 'middle_seats',
+        priority,
+        summary: `Middle seats: ${show.movie} · ${show.dimension} · ${show.time} · ${show.screen} — ${summary.middleFree} free`,
+      });
+    }
+  }
+
   await live.seats(
     { ...summary, source: source.name, venue: cfg.venue, date: show.date, sessionId: show.sessionId, screen: show.screen },
     layoutSource === 'learned' ? [lKey] : [],
