@@ -1,0 +1,16 @@
+{
+  "venueName": "Prasads Multiplex",
+  "venue": "PRHN",
+  "venueSlug": "prasads-multiplex-hyderabad",
+  "region": "HYD",
+  "dates": ["20261217", "20261218"],
+  "movies": ["Avengers", "Dune"],
+  "priorityFormats": ["Infinity Vision", "PCX", "IMAX", "Dolby", "4DX", "Barco", "Laser"],
+  "poll": {
+    "minSeconds": 60,
+    "maxSeconds": 90,
+    "reloadEveryMinutes": 45,
+    "blockedBackoffMinMinutes": 5,
+    "blockedBackoffMaxMinutes": 10
+  }
+}
