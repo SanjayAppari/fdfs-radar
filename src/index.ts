@@ -8,6 +8,7 @@ import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOf
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
 import { RedisStore } from './store.js';
+import { RequestBudget } from './budget.js';
 import { randomBetween, sleep, todayIST } from './time.js';
 
 const once = process.argv.includes('--once');
@@ -373,11 +374,14 @@ async function main() {
 
   let blocked = false;
   let consecutiveErrors = 0;
-  /** Adaptive slow-down after rate limiting: doubles on 429, eases back after clean rounds. */
-  let restScale = 1;
-  let cleanRounds = 0;
-  let round = 0;
-  const batchGap = () => sleep(randomBetween(cfg.poll.gapMinSeconds, cfg.poll.gapMaxSeconds) * 1000, stop.signal);
+  /**
+   * Hard budget for showtimes requests (the site rate-limits them per
+   * connection and locks you out for an hour). Halved on every 429 and
+   * remembered in Redis, so the same mistake can't repeat.
+   */
+  const savedBudget = Number(await store.get('fdfs:poll-budget'));
+  const budget = new RequestBudget(Math.min(cfg.poll.requestsPerMinute, savedBudget > 0 ? savedBudget : Infinity));
+  log.info(`showtimes budget: ${budget.perMinute} requests/min`);
 
   /**
    * Runs one unit of work. Returns false when blocked (the caller should drop
@@ -400,27 +404,28 @@ async function main() {
         // polling, seat checks and the fast loop carry on, so we're never blind.
         const wait = (err.retryAfterSeconds ?? 600) * 1000;
         const until = Date.now() + wait;
-        if (label.endsWith('(cached)') && until > ctx.showtimesPausedUntil) {
+        if (until > ctx.showtimesPausedUntil) {
           // Even cached data is refused: the whole API is locked for this connection. Stop
           // sending showtime requests until the site's deadline (more requests may extend it).
           ctx.showtimesPausedUntil = until;
           await store.writeAll([{ key: 'fdfs:showtimes-paused-until', value: String(until), ttlSeconds: Math.ceil(wait / 1000) + 60 }]);
-          log.warn(`cached showtimes refused too (${label}); no showtime requests for ~${Math.round(wait / 60_000)} min`);
+          log.warn(`showtimes locked (${label}); no showtime requests for ~${Math.round(wait / 60_000)} min`);
           await live.setStatus('error', `rate limited — showtimes paused ~${Math.round(wait / 60_000)} min; seat checks continue`);
         }
         if (until > ctx.liveBlockedUntil) {
           ctx.liveBlockedUntil = until;
           await store.writeAll([{ key: 'fdfs:live-blocked-until', value: String(until), ttlSeconds: Math.ceil(wait / 1000) + 60 }]);
-          restScale = Math.max(restScale, 2); // come back gently when live data resumes
-          cleanRounds = 0;
+          budget.perMinute = Math.max(1, Math.floor(budget.perMinute / 2));
+          await store.writeAll([{ key: 'fdfs:poll-budget', value: String(budget.perMinute), ttlSeconds: 7 * 86_400 }]);
+          log.warn(`showtimes budget lowered to ${budget.perMinute}/min (saved for 7 days)`);
           const mins = Math.round(wait / 60_000);
-          log.warn(`rate limited (${label}); live data off for ~${mins} min, using cached data meanwhile`);
-          await live.setStatus('error', `rate limited — live data off ~${mins} min, using cached data`);
+          log.warn(`rate limited (${label}); showtimes paused ~${mins} min`);
+          await live.setStatus('error', `rate limited — showtimes paused ~${mins} min; seat checks continue`);
           if (await store.setNX('fdfs:alerted:ratelimited', '1', 3600)) {
             await notifier
               .send(
-                `⏳ <b>Rate limited</b> by the site for ~${mins} min. Still watching using cached data ` +
-                  `(may be a few minutes behind); live data resumes automatically.`,
+                `⏳ <b>Rate limited</b> by the site for ~${mins} min. New-show checks pause until then; ` +
+                  `seat checks continue. Request budget lowered to ${budget.perMinute}/min so it won't repeat.`,
               )
               .catch(() => {});
           }
@@ -484,8 +489,13 @@ async function main() {
   const fast = once ? Promise.resolve() : hotLoop(ctx).catch((e) => log.error(`fast loop crashed: ${(e as Error).stack ?? e}`));
 
   try {
-    // Showtimes loop: every venue × date, a few in parallel, then a short rest.
-    round: while (!stop.signal.aborted) {
+    // Showtimes scheduler: one request at a time under a hard per-minute budget.
+    // Every request is live (the site's limiter counts cached ones too). Each slot
+    // goes to the venue × date that is most overdue, priority dates weighted ×4.
+    const lastFetched = new Map<string, number>();
+    let sent = 0;
+    let summaryAt = Date.now();
+    while (!stop.signal.aborted) {
       await waitIfPaused();
       if (Date.now() < ctx.showtimesPausedUntil) {
         await sleep(Math.min(ctx.showtimesPausedUntil - Date.now() + 2_000, 60_000), stop.signal);
@@ -493,59 +503,47 @@ async function main() {
       }
       const today = todayIST();
       const upcoming = cfg.dates.filter((d) => d >= today);
-      const liveDates = new Set(cfg.poll.liveDates.length ? cfg.poll.liveDates : upcoming.slice(0, 2));
-      const othersDue = round % cfg.poll.otherEveryRounds === 0;
-      round++;
-      // Live dates every round (fresh data); the rest every few rounds from the CDN cache.
-      const liveOk = Date.now() >= ctx.liveBlockedUntil;
-      // While live data is off, poll every date from the cache each round (cheap, not rate limited).
-      const jobs = upcoming
-        .filter((d) => liveDates.has(d) || othersDue || !liveOk)
-        .flatMap((date) =>
-          cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date, fresh: liveOk && liveDates.has(date) })),
-        );
-      if (jobs.length === 0) {
+      if (!upcoming.length) {
         log.warn('all configured dates are in the past — update config.json');
         if (once) break;
         await sleep(30 * 60_000, stop.signal);
         continue;
       }
+      const priority = new Set(cfg.poll.liveDates.length ? cfg.poll.liveDates : upcoming.slice(0, 2));
+      const isPriority = (c: { venue: VenueConfig; date: string }) => priority.has(c.date) || priority.has(`${c.venue.code}:${c.date}`);
+      const combos = upcoming.flatMap((date) => cfg.venues.filter((v) => v.dates.includes(date)).map((venue) => ({ venue, date })));
+      const now = Date.now();
+      const pick = combos
+        .map((c) => {
+          const k = `${c.venue.code}:${c.date}`;
+          const age = now - (lastFetched.get(k) ?? 0);
+          return { ...c, k, score: age * (isPriority(c) ? 4 : 1) };
+        })
+        .sort((a, b) => b.score - a.score)[0]!;
 
-      const started = Date.now();
-      for (let i = 0; i < jobs.length; i += cfg.poll.concurrency) {
-        if (stop.signal.aborted) break round;
-        const batch = jobs.slice(i, i + cfg.poll.concurrency);
-        const results = await Promise.all(
-          batch.map(({ venue, date, fresh }) =>
-            step(`${venue.code} ${date}${fresh && Date.now() >= ctx.liveBlockedUntil ? '' : ' (cached)'}`, () =>
-              pollDate(ctx, venue, date, fresh && Date.now() >= ctx.liveBlockedUntil),
-            ),
-          ),
-        );
-        if (results.includes(false) || Date.now() < ctx.showtimesPausedUntil) {
-          if (once) break round;
-          continue round;
-        }
-        if (i + cfg.poll.concurrency < jobs.length) await batchGap();
-      }
-      if (once) {
-        // --once: also do one pass of seat checks so the command stays useful
+      await budget.take(stop.signal);
+      if (stop.signal.aborted) break;
+      lastFetched.set(pick.k, Date.now());
+      sent++;
+      await step(`${pick.venue.code} ${pick.date}`, () => pollDate(ctx, pick.venue, pick.date, true));
+
+      if (once && sent >= combos.length) {
         if (cfg.seats.enabled && source.fetchSeatMap) {
           for (const show of await dueSeatChecks(ctx)) await step(`seats ${show.sessionId}`, () => checkSeats(ctx, show));
         }
         break;
       }
-      if (liveOk && restScale > 1 && ++cleanRounds >= 10) {
-        restScale = Math.max(1, restScale / 1.5);
-        cleanRounds = 0;
+      if (Date.now() - summaryAt >= 60_000) {
+        const pri = combos.filter(isPriority);
+        const oldest = (list: typeof combos) =>
+          Math.round(Math.max(0, ...list.map((c) => Date.now() - (lastFetched.get(`${c.venue.code}:${c.date}`) ?? Date.now()))) / 1000);
+        log.info(
+          `showtimes: ${sent} requests in the last minute (budget ${budget.perMinute}/min); ` +
+            `${pri.length} priority combos refreshed within ${oldest(pri)}s, others within ${oldest(combos.filter((c) => !isPriority(c)))}s`,
+        );
+        sent = 0;
+        summaryAt = Date.now();
       }
-      const live = jobs.filter((j) => j.fresh).length;
-      log.info(
-        `showtimes round: ${jobs.length} fetches (${live} live, ${jobs.length - live} cached) in ${((Date.now() - started) / 1000).toFixed(1)}s` +
-          (liveOk ? (restScale > 1 ? `, slowed ×${restScale.toFixed(1)}` : '') : `, live data off for ${Math.round((ctx.liveBlockedUntil - Date.now()) / 60_000)} min`),
-      );
-      // Cached rounds can run at the normal pace; only live rounds are slowed.
-      await sleep(randomBetween(cfg.poll.minSeconds, cfg.poll.maxSeconds) * (liveOk ? restScale : 1) * 1000, stop.signal);
     }
   } finally {
     stop.abort();

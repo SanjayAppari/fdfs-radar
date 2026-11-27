@@ -142,16 +142,11 @@
     "EPIQ"
   ],
   "poll": {
-    "minSeconds": 25,
-    "maxSeconds": 35,
     "reloadEveryMinutes": 45,
     "blockedBackoffMinMinutes": 5,
     "blockedBackoffMaxMinutes": 10,
-    "gapMinSeconds": 1.5,
-    "gapMaxSeconds": 3,
-    "concurrency": 1,
     "liveDates": [],
-    "otherEveryRounds": 6
+    "requestsPerMinute": 5
   },
   "seats": {
     "enabled": true,

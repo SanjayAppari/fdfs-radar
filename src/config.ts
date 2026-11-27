@@ -16,10 +16,10 @@ export interface PollConfig {
   reloadEveryMinutes: number;
   /** Showtime fetches run in parallel batches of this size (keep 1 when polling live) */
   concurrency: number;
-  /** Dates fetched live (no CDN cache) every round; empty = the first two configured dates */
+  /** Priority entries, refreshed ~4× as often: "20261217" or "AMBH:20261217"; empty = first two dates */
   liveDates: string[];
-  /** Other dates are fetched (from the CDN cache) every N rounds */
-  otherEveryRounds: number;
+  /** Hard cap on showtimes requests per minute (all venues and dates together) */
+  requestsPerMinute: number;
 }
 
 export interface SeatConfig {
@@ -153,7 +153,7 @@ const DEFAULT_POLL: PollConfig = {
   reloadEveryMinutes: 45,
   concurrency: 1,
   liveDates: [],
-  otherEveryRounds: 6,
+  requestsPerMinute: 5,
 };
 
 /** Accepts "20261217" or "2026-12-17". */
@@ -188,10 +188,19 @@ export function parseConfig(raw: unknown): WatchConfig {
   const poll: PollConfig = {
     ...DEFAULT_POLL,
     ...rawPoll,
-    liveDates: rawPoll.liveDates ? strings(rawPoll.liveDates, 'poll.liveDates').map(normaliseDate) : [],
+    // "20261217" (that date at every venue) or "AMBH:20261217" (one venue + date)
+    liveDates: rawPoll.liveDates
+      ? strings(rawPoll.liveDates, 'poll.liveDates').map((x) => {
+          const [a, b] = x.includes(':') ? x.split(':') : ['', x];
+          return a ? `${a.toUpperCase()}:${normaliseDate(b!)}` : normaliseDate(b!);
+        })
+      : [],
   };
   if (poll.minSeconds > poll.maxSeconds) throw new Error('poll.minSeconds must be <= poll.maxSeconds');
   if (!(poll.concurrency >= 1 && poll.concurrency <= 6)) throw new Error('poll.concurrency must be 1–6');
+  if (!(poll.requestsPerMinute > 0 && poll.requestsPerMinute <= 6)) {
+    throw new Error('poll.requestsPerMinute must be between 0 and 6 (the site locks you out for an hour above ~6/min)');
+  }
 
   // New format: venues[]. Old single-venue format (venue/venueSlug/venueName + seats.screens) still loads.
   const rawVenues: Record<string, unknown>[] = Array.isArray(c.venues)
