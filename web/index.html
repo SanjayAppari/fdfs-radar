@@ -80,10 +80,10 @@
   nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
   nav.tabs .count { font-weight: 500; color: var(--muted); margin-left: 4px; font-size: 12px; }
 
-  main { padding: 18px 0 60px; }
+  main.wrap { padding-top: 24px; padding-bottom: 60px; }
   [hidden] { display: none !important; }
 
-  .venues { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .venues { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .venuebtn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 14px; cursor: pointer; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
   .venuebtn .c { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--off-bg); color: var(--off); }
   .venuebtn .c.ok { background: var(--ok-bg); color: var(--ok); }
@@ -209,6 +209,7 @@
   .k-new_show { color: var(--accent); } .k-middle_seats { color: var(--ok); } .k-avail_up { color: var(--ok); } .k-date_open { color: #2563eb; }
 
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(140%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; z-index: 40; transition: transform .25s; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
+  .toast:not(.show) { opacity: 0; visibility: hidden; }
   .toast.show { transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 720px) {
