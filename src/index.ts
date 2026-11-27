@@ -51,9 +51,29 @@ async function pollDate(ctx: Ctx, venue: VenueConfig, date: string): Promise<voi
     await notifier.sendAll(messages); // throws → no commit → retried next round
   }
   await result.commit();
+  await resetSoldOutSeats(ctx, snap);
   await live.alerts(venue, result.alerts);
   await live.snapshot(venue, snap, link, result.touchedKeys);
   await live.setStatus('ok');
+}
+
+/**
+ * Sold-out shows aren't seat-checked, so a stored "has middle seats" result
+ * would otherwise go stale and swallow the 🎯 alert when seats come back.
+ */
+async function resetSoldOutSeats(ctx: Ctx, snap: DateSnapshot): Promise<void> {
+  const soldOut = snap.shows.filter((s) => s.availStatus === '0');
+  if (!soldOut.length) return;
+  const keys = soldOut.map((s) => seatsKey(ctx.source.name, s.venue, s.date, s.sessionId));
+  const stored = await ctx.store.mget(keys);
+  const writes = stored.flatMap((raw, i) => {
+    const r = raw ? (JSON.parse(raw) as SeatResult) : null;
+    if (!r?.middleOk) return [];
+    log.info(`seats ${soldOut[i]!.venue} ${soldOut[i]!.date} ${soldOut[i]!.time} ${soldOut[i]!.screen}: sold out, clearing middle-seat state`);
+    const cleared: SeatResult = { ...r, middleOk: false, middleFree: 0, totalFree: 0, bestBlock: 0, checkedAt: new Date().toISOString() };
+    return [{ key: keys[i]!, value: JSON.stringify(cleared), ttlSeconds: 14 * 86_400 }];
+  });
+  await ctx.store.writeAll(writes);
 }
 
 const showKey = (s: Show) => `${s.venue}:${s.date}:${s.sessionId}`;
