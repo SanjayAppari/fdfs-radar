@@ -29,6 +29,7 @@ describe('parseByVenue', () => {
       time: '08:00 AM',
       showDateTime: '202612170800',
       availStatus: '0',
+      categories: [{ name: 'EXECUTIVE + 3D Glass', price: '325.00', availStatus: '0' }],
     });
     const dune = snap.shows.find((x) => x.sessionId === '259271')!;
     expect(dune).toMatchObject({ dimension: '2D', screen: 'SCREEN 6', attributes: 'PCX Screen', availStatus: '1' });

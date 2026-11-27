@@ -4,6 +4,14 @@
  * diff + notifier never care where a show came from.
  */
 
+export interface SeatCategory {
+  /** e.g. "EXECUTIVE", "GOLD" */
+  name: string;
+  price: string;
+  /** "1" = available */
+  availStatus: string;
+}
+
 export interface Show {
   source: string;
   venue: string;
@@ -25,6 +33,8 @@ export interface Show {
   showDateTime: string;
   /** "1" = available */
   availStatus: string;
+  /** Seat classes with price + availability (empty if the source doesn't say) */
+  categories: SeatCategory[];
 }
 
 export type DateStatus = 'open' | 'not_open' | 'venue_down';

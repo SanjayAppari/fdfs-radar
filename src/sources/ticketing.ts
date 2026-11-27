@@ -66,6 +66,11 @@ export function parseByVenue(
           time: str(st.ShowTime),
           showDateTime: str(st.ShowDateTime),
           availStatus: str(st.AvailStatus),
+          categories: asArray(st.Categories).map((c) => ({
+            name: str(c.PriceDesc),
+            price: str(c.CurPrice),
+            availStatus: str(c.AvailStatus),
+          })),
         });
       }
     }

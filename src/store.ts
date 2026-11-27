@@ -49,6 +49,15 @@ export class RedisStore implements KV {
     await multi.exec();
   }
 
+  async publish(channel: string, message: string) {
+    await this.redis.publish(channel, message);
+  }
+
+  /** LPUSH + LTRIM: keep the newest `max` entries. */
+  async pushCapped(key: string, value: string, max: number) {
+    await this.redis.multi().lpush(key, value).ltrim(key, 0, max - 1).exec();
+  }
+
   async close() {
     await this.redis.quit().catch(() => {});
   }

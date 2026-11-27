@@ -1,0 +1,160 @@
+/**
+ * Live view state for the dashboard. Written by the watcher, read by
+ * src/web/server.ts. Purely informational: alerting never reads these keys.
+ */
+import type { WatchConfig } from './config.js';
+import { isPriority, isWatchedMovie, type Alert } from './diff.js';
+import { log } from './log.js';
+import type { DateSnapshot, Show } from './sources/types.js';
+import type { RedisStore } from './store.js';
+
+export const LIVE_CHANNEL = 'fdfs:events';
+export const STATUS_KEY = 'fdfs:status';
+export const ALERT_LOG_KEY = 'fdfs:alerts:log';
+export const snapshotKey = (source: string, venue: string, date: string) => `fdfs:${source}:${venue}:snapshot:${date}`;
+
+export interface LiveShow extends Show {
+  watched: boolean;
+  priority: boolean;
+}
+
+export interface LiveSnapshot {
+  source: string;
+  venue: string;
+  venueName: string;
+  date: string;
+  status: DateSnapshot['status'];
+  openDates: string[] | null;
+  fetchedAt: string;
+  bookingUrl: string;
+  shows: LiveShow[];
+}
+
+export interface WatcherStatus {
+  state: 'starting' | 'ok' | 'blocked' | 'error' | 'stopped';
+  message?: string;
+  since: string;
+  startedAt: string;
+  lastPollAt?: string;
+  venueName: string;
+  venue: string;
+  source: string;
+  dates: string[];
+  movies: string[];
+  priorityFormats: string[];
+  pollSeconds: [number, number];
+}
+
+export type LiveEvent =
+  | { type: 'snapshot'; date: string; venue: string; source: string; keys: string[] }
+  | { type: 'status'; status: WatcherStatus }
+  | { type: 'alert'; entry: AlertLogEntry };
+
+export interface AlertLogEntry {
+  at: string;
+  date: string;
+  kind: Alert['kind'];
+  priority: boolean;
+  summary: string;
+}
+
+const SNAPSHOT_TTL = 90 * 86_400;
+
+export class LiveFeed {
+  private status: WatcherStatus;
+
+  constructor(
+    private readonly store: RedisStore,
+    private readonly cfg: WatchConfig,
+    source: string,
+  ) {
+    const now = new Date().toISOString();
+    this.status = {
+      state: 'starting',
+      since: now,
+      startedAt: now,
+      venueName: cfg.venueName,
+      venue: cfg.venue,
+      source,
+      dates: cfg.dates,
+      movies: cfg.movies,
+      priorityFormats: cfg.priorityFormats,
+      pollSeconds: [cfg.poll.minSeconds, cfg.poll.maxSeconds],
+    };
+  }
+
+  private async emit(event: LiveEvent) {
+    await this.store.publish(LIVE_CHANNEL, JSON.stringify(event));
+  }
+
+  /** Never let the dashboard feed break polling. */
+  private async safe(what: string, fn: () => Promise<void>) {
+    try {
+      await fn();
+    } catch (err) {
+      log.warn(`live feed (${what}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  setStatus(state: WatcherStatus['state'], message?: string) {
+    return this.safe('status', async () => {
+      const now = new Date().toISOString();
+      if (state !== this.status.state) this.status.since = now;
+      this.status = { ...this.status, state, message };
+      if (state === 'ok') this.status.lastPollAt = now;
+      await this.store.writeAll([{ key: STATUS_KEY, value: JSON.stringify(this.status) }]);
+      await this.emit({ type: 'status', status: this.status });
+    });
+  }
+
+  snapshot(snap: DateSnapshot, bookingUrl: string, changedKeys: string[]) {
+    return this.safe('snapshot', async () => {
+      const key = snapshotKey(snap.source, snap.venue, snap.date);
+      const live: LiveSnapshot = {
+        source: snap.source,
+        venue: snap.venue,
+        venueName: this.cfg.venueName,
+        date: snap.date,
+        status: snap.status,
+        openDates: snap.openDates,
+        fetchedAt: new Date().toISOString(),
+        bookingUrl,
+        shows: snap.shows.map((s) => ({ ...s, watched: isWatchedMovie(s, this.cfg), priority: isPriority(s, this.cfg) })),
+      };
+      await this.store.writeAll([{ key, value: JSON.stringify(live), ttlSeconds: SNAPSHOT_TTL }]);
+      await this.emit({ type: 'snapshot', date: snap.date, venue: snap.venue, source: snap.source, keys: [key, ...changedKeys] });
+    });
+  }
+
+  alerts(alerts: Alert[]) {
+    return this.safe('alerts', async () => {
+      for (const a of alerts) {
+        const entry = toLogEntry(a);
+        await this.store.pushCapped(ALERT_LOG_KEY, JSON.stringify(entry), 200);
+        await this.emit({ type: 'alert', entry });
+      }
+    });
+  }
+}
+
+function toLogEntry(a: Alert): AlertLogEntry {
+  const at = new Date().toISOString();
+  if (a.kind === 'date_open') {
+    return {
+      at,
+      date: a.date,
+      kind: a.kind,
+      priority: a.shows.some((s) => s.priority),
+      summary: `Bookings opened — ${a.shows.length} watched show(s)`,
+    };
+  }
+  const s = a.item.show;
+  const verb = a.kind === 'new_show' ? 'New show' : 'Seats available';
+  return {
+    at,
+    date: a.date,
+    kind: a.kind,
+    priority: a.item.priority,
+    summary: `${verb}: ${s.movie} · ${s.dimension} · ${s.time} · ${[s.screen, s.attributes].filter(Boolean).join(' · ')}`,
+  };
+}

@@ -27,6 +27,8 @@ export interface DiffResult {
   /** True when this date was seen for the first time (state recorded, no alerts). */
   baseline: boolean;
   alerts: Alert[];
+  /** Keys commit() will write (for the live dashboard). */
+  touchedKeys: string[];
   /**
    * Persist the new state + dedupe markers. Call ONLY after the alerts were
    * delivered, so a failed Telegram send is retried on the next poll.
@@ -90,7 +92,7 @@ export async function diffSnapshot(
 
   // Venue reported down: no information either way, touch nothing.
   if (snap.status === 'venue_down') {
-    return { baseline: false, alerts: [], commit: async () => {} };
+    return { baseline: false, alerts: [], touchedKeys: [], commit: async () => {} };
   }
 
   const [baselineRaw, openRaw] = await store.mget([k.baseline(date), k.open(date)]);
@@ -105,7 +107,7 @@ export async function diffSnapshot(
   if (isBaseline) writes.push({ key: k.baseline(date), value: new Date().toISOString(), ttlSeconds: STATE_TTL });
 
   if (!isOpen) {
-    return { baseline: isBaseline, alerts, commit: () => store.writeAll(writes) };
+    return { baseline: isBaseline, alerts, touchedKeys: writes.map((w) => w.key), commit: () => store.writeAll(writes) };
   }
 
   const watched = (s: Show) => isWatchedMovie(s, cfg);
@@ -152,6 +154,7 @@ export async function diffSnapshot(
   return {
     baseline: isBaseline,
     alerts,
+    touchedKeys: [...writes.map((w) => w.key), ...dedupeKeys.map((d) => d.key)],
     commit: async () => {
       for (const d of dedupeKeys) await store.setNX(d.key, '1', d.ttl);
       await store.writeAll(writes);

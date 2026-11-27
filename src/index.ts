@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { loadConfig, loadEnv, type WatchConfig } from './config.js';
 import { diffSnapshot, isWatchedMovie } from './diff.js';
+import { LiveFeed } from './live.js';
 import { log } from './log.js';
 import { formatAlert, packMessages, TelegramNotifier } from './notify/telegram.js';
 import { TicketingSource } from './sources/ticketing.js';
@@ -23,9 +24,11 @@ async function pollDate(
   store: RedisStore,
   notifier: TelegramNotifier,
   cfg: WatchConfig,
+  live: LiveFeed,
 ): Promise<void> {
   const snap = await source.fetchDate(date);
   const result = await diffSnapshot(store, snap, cfg);
+  const link = source.bookingUrl(date);
   const watchedCount = snap.shows.filter((s) => isWatchedMovie(s, cfg)).length;
   log.info(
     `${date}: ${snap.status}, ${snap.shows.length} shows (${watchedCount} watched)` +
@@ -34,11 +37,13 @@ async function pollDate(
   );
 
   if (result.alerts.length) {
-    const link = source.bookingUrl(date);
     const messages = packMessages(result.alerts.map((a) => formatAlert(a, cfg.venueName, link)));
     await notifier.sendAll(messages); // throws → no commit → retried next round
   }
   await result.commit();
+  await live.alerts(result.alerts);
+  await live.snapshot(snap, link, result.touchedKeys);
+  await live.setStatus('ok');
 }
 
 async function main() {
@@ -57,6 +62,9 @@ async function main() {
     channel: env.browserChannel,
     reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
   });
+
+  const live = new LiveFeed(store, cfg, source.name);
+  await live.setStatus('starting');
 
   log.info(`watching ${cfg.venueName} dates=[${cfg.dates.join(', ')}] movies=[${cfg.movies.join(', ') || 'ALL'}]`);
   await source.init();
@@ -78,7 +86,7 @@ async function main() {
       for (const [i, date] of dates.entries()) {
         if (stop.signal.aborted) break;
         try {
-          await pollDate(date, source, store, notifier, cfg);
+          await pollDate(date, source, store, notifier, cfg, live);
           consecutiveErrors = 0;
           if (blocked) {
             blocked = false;
@@ -88,6 +96,7 @@ async function main() {
         } catch (err) {
           if (err instanceof BlockedError) {
             log.warn(`blocked: ${err.message}`);
+            await live.setStatus('blocked', err.message);
             if (!blocked) {
               blocked = true;
               // One alert per blocked episode, also deduped across restarts.
@@ -106,6 +115,7 @@ async function main() {
           }
           consecutiveErrors++;
           log.error(`${date}: ${(err as Error).stack ?? err}`);
+          await live.setStatus('error', `${date}: ${(err as Error).message}`);
           if (consecutiveErrors >= 3) {
             log.warn('3 consecutive errors, recovering source');
             await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
@@ -122,6 +132,7 @@ async function main() {
       await sleep(wait, stop.signal);
     }
   } finally {
+    await live.setStatus('stopped');
     await source.close();
     await store.close();
     log.info('stopped');

@@ -15,7 +15,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "setup:browser": "playwright install chromium",
-    "telegram:test": "tsx src/scripts/telegram-test.ts"
+    "telegram:test": "tsx src/scripts/telegram-test.ts",
+    "dashboard": "tsx src/web/server.ts",
+    "start:dashboard": "node dist/web/server.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

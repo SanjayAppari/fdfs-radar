@@ -110,6 +110,26 @@ pm2 logs fdfs-radar
 pm2 save && pm2 startup        # start on login (follow the printed command)
 ```
 
+## Dashboard
+
+A local, read-only web UI at **http://127.0.0.1:4317** (localhost only):
+
+- **Shows** — per date: open / not open, every showtime as a chip (green =
+  available, 🔥 = priority format, NEW badge / flash when something changes).
+  Click a chip for seat classes, prices and the booking link.
+- **Redis** — live key browser (`fdfs:*` by default, any pattern works) with
+  type, TTL and value; click a row for pretty-printed JSON. Changed rows flash.
+- **Alerts** — the last 200 alerts that were sent to Telegram.
+
+Updates are pushed instantly: the watcher publishes on the Redis channel
+`fdfs:events` after every poll and the dashboard streams that to the browser
+(Server-Sent Events). PM2 runs it as `fdfs-dashboard`; standalone:
+`npm run dashboard`. Port/host: `DASHBOARD_PORT`, `DASHBOARD_HOST`.
+
+The watcher also keeps `fdfs:<source>:<venue>:snapshot:<date>` (full latest
+response incl. seat classes), `fdfs:status` and `fdfs:alerts:log` for the UI.
+Alerting never reads these.
+
 ### Keep the Mac awake
 
 Alerts stop while the Mac sleeps. Either set *System Settings → Battery/Energy →
