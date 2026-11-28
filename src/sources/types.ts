@@ -10,6 +10,8 @@ export interface SeatCategory {
   price: string;
   /** "1" = available */
   availStatus: string;
+  /** Area code linking the class to the seat layout (e.g. "CR", "0000000002"), when given */
+  code?: string;
 }
 
 export interface Show {

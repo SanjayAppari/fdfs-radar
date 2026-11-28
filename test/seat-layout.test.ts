@@ -13,8 +13,8 @@ import { SeatMapUnavailable } from '../src/sources/types.js';
 import { detectRowOrder, orderOfSpec, seatDirection } from '../src/seats.js';
 
 /** Raw seat-layout responses captured from the site (still encrypted). */
-const fixture = (screen: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(`../fixtures/seat-layout-PRHN-${screen}.json`, import.meta.url)), 'utf8'));
+const fixture = (name: string) =>
+  JSON.parse(readFileSync(fileURLToPath(new URL(`../fixtures/seat-layout-${name.includes('-') ? name : `PRHN-${name}`}.json`, import.meta.url)), 'utf8'));
 const gridOf = (screen: string) => parseSeatLayout(decryptSeatLayout(encryptedLayoutFrom(fixture(screen))));
 
 describe('seat layout: decrypt + parse', () => {
@@ -54,10 +54,42 @@ describe('seat layout: decrypt + parse', () => {
     }
   });
 
+  it('names PVR classes via the show\'s area codes (layout only says "CR")', () => {
+    const rows = seatRowsFromGrid(gridOf('ILKS-PXL'), [
+      { name: 'CLASSIC ROWS', price: '359.00', availStatus: '1', code: 'CR' },
+      { name: 'RECLINER ROWS', price: '418.00', availStatus: '0', code: 'BR' },
+    ]);
+    const names = new Set(rows.map((r) => r.category));
+    expect(names.has('CLASSIC ROWS')).toBe(true);
+    expect(names.has('RECLINER ROWS')).toBe(true);
+    expect(rows.find((r) => r.category === 'CLASSIC ROWS')!.price).toBe('359.00');
+    expect(names.has('QR')).toBe(true); // no class given for it: falls back to the layout's name
+  });
+
   it('maps rows to SeatRow with category and price from the show', () => {
     const rows = seatRowsFromGrid(gridOf('SCREEN6'), [{ name: 'GOLD', price: '295.00', availStatus: '1' }]);
     expect(rows[0]).toMatchObject({ row: 'N', category: 'GOLD', price: '295.00' });
     expect(rows.every((r) => r.seats.every((s) => /^\d+$/.test(s.n)))).toBe(true);
+  });
+
+  it('reads the short seat format (PVR Lakeshore: `A201`, no "+number")', () => {
+    const grid = gridOf('ILKS-PXL');
+    expect(grid.areas.map((a) => a.id)).toEqual(['A', 'B', 'C', 'D']);
+    const q = grid.rows[0]!;
+    expect(q.row).toBe('Q');
+    expect(q.seats.slice(0, 3).map((s) => s.n)).toEqual(['01', '02', '03']); // labelled as the site shows them
+    expect(q.seats[2]!.col - q.seats[1]!.col).toBe(8); // aisle of 7 empty columns
+    const seats = grid.rows.flatMap((r) => r.seats);
+    expect(seats.length).toBeGreaterThan(100);
+    expect(seats.every((s) => /^\d{2}$/.test(s.n))).toBe(true);
+  });
+
+  it('agrees with config.json on hall direction for PVR Lakeshore PXL Audi 6', () => {
+    // config: rows "A-H,J-N,P-Q" (A at the screen), seats asc.
+    const seatRows = seatRowsFromGrid(gridOf('ILKS-PXL'));
+    expect(detectRowOrder(seatRows)).toBe(orderOfSpec('A-H,J-N,P-Q'));
+    const full = seatRows.reduce((a, b) => (b.seats.length > a.seats.length ? b : a));
+    expect(seatDirection(full.seats)).toBe('asc');
   });
 
   it('passes an already-decrypted layout straight through', () => {
@@ -97,8 +129,8 @@ describe('seat layout: errors', () => {
     expect(() => encryptedLayoutFrom({ something: 'else' })).toThrow(SeatLayoutFormatError);
   });
 
-  it('a layout with no seats is SeatMapUnavailable', () => {
-    expect(() => parseSeatLayout('GOLD:A:1||1:A:A000:A0+0|')).toThrow(SeatMapUnavailable);
+  it('a layout with no readable seat is a format error (so the browser takes over)', () => {
+    expect(() => parseSeatLayout('GOLD:A:1||1:A:A000:A0+0|')).toThrow(SeatLayoutFormatError);
   });
 });
 

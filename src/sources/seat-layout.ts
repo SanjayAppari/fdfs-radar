@@ -7,7 +7,9 @@
  *   areas: `NAME:areaId:areaCode:...` joined by `|`, e.g. `EXECUTIVE:A:0000000002:1:N:0`
  *   rows:  `rowNo:LABEL:<marker>:<seat>:<seat>…` joined by `|`, top → bottom as
  *          drawn (screen at the bottom). Seats are left → right as drawn.
- *   seat:  `<areaId><status><grid>+<number>`, e.g. `A2011+1`; `A0+0` is a gap.
+ *   seat:  long form `<areaId><status><grid>+<number>`, e.g. `A2011+1` (`A0+0` = gap),
+ *          or short form `<areaId><status><number>`, e.g. `A201` (`A000` = gap);
+ *          which one depends on the venue's ticketing system.
  *          status 1 = free, 4 = free ("best seat"), 2 = booked, 0 = gap,
  *          anything else = not sellable (held/blocked).
  */
@@ -122,17 +124,18 @@ export function parseSeatLayout(text: string): SeatGrid {
   let cols = 0;
   const lines = rowPart.split('|').filter(Boolean);
   lines.forEach((raw, line) => {
-    const [, label = '', ...rest] = raw.split(':');
-    // The first field after the label is a marker without a seat number; seats all carry "+".
-    const cells = rest.filter((c) => c.includes('+'));
+    // The first field after the label is the row's marker (`A000`), not a column.
+    const [, label = '', , ...cells] = raw.split(':');
     cols = Math.max(cols, cells.length);
     const seats: GridSeat[] = [];
     cells.forEach((cell, col) => {
-      const [token = '', number = ''] = cell.split('+');
+      // Long form `A2011+1`: number after "+". Short form `A201`: number after the status.
+      const [token = '', plus] = cell.split('+');
       const status = token[1] ?? '0';
       if (status === '0') return; // gap / aisle
+      const number = plus !== undefined && plus !== '0' ? plus : token.slice(2);
       seats.push({
-        n: number && number !== '0' ? number.replace(/^0+(?=.)/, '') : token.slice(2),
+        n: number, // as the site labels it ("1", or "01" in the short form)
         free: status === '1' || status === '4',
         status,
         areaId: token[0] ?? '',
@@ -141,7 +144,9 @@ export function parseSeatLayout(text: string): SeatGrid {
     });
     if (label.trim() && seats.length) rows.push({ row: label.trim(), line, seats });
   });
-  if (!rows.length) throw new SeatMapUnavailable('seat layout has no seats (the show may be closed)');
+  // A refused/closed show comes back as blnSuccess=false; a layout with no
+  // readable seat at all means a format this parser doesn't know (→ browser).
+  if (!rows.length) throw new SeatLayoutFormatError('seat layout has no readable seats (unknown format?)');
   return { areas, rows, cols, lines: lines.length };
 }
 
@@ -149,19 +154,27 @@ export function parseSeatLayout(text: string): SeatGrid {
  * The grid as the watcher's SeatRow[]: one entry per row and seat class, in
  * drawn order (rows top → bottom, seats left → right). Unlike the browser
  * source, fully booked rows are included, so totals cover the whole hall.
- * Prices come from the show's categories, matched by class name.
+ * Class names and prices come from the show's categories, matched by area
+ * code (AreaCatCode), else by name.
  */
 export function seatRowsFromGrid(grid: SeatGrid, categories: SeatCategory[] = []): SeatRow[] {
-  const areaName = new Map(grid.areas.map((a) => [a.id, a.name]));
-  const price = new Map(categories.map((c) => [c.name.trim().toUpperCase(), c.price]));
+  const byCode = new Map(categories.filter((c) => c.code).map((c) => [c.code!.trim().toUpperCase(), c]));
+  const byName = new Map(categories.map((c) => [c.name.trim().toUpperCase(), c]));
+  // Class name + price per area: the show's class with the same area code, else the same name.
+  const area = new Map(
+    grid.areas.map((a) => {
+      const cat = byCode.get(a.code.trim().toUpperCase()) ?? byName.get(a.name.toUpperCase());
+      return [a.id, { name: cat?.name.trim() || a.name, price: cat?.price ?? '' }];
+    }),
+  );
   const out: SeatRow[] = [];
   for (const r of grid.rows) {
     const byArea = new Map<string, SeatRow>();
     for (const s of r.seats) {
-      const category = areaName.get(s.areaId) ?? s.areaId;
+      const { name: category, price } = area.get(s.areaId) ?? { name: s.areaId, price: '' };
       let row = byArea.get(category);
       if (!row) {
-        row = { row: r.row, category, price: price.get(category.toUpperCase()) ?? '', seats: [] };
+        row = { row: r.row, category, price, seats: [] };
         byArea.set(category, row);
         out.push(row);
       }

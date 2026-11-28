@@ -68,6 +68,7 @@ export function parseByVenue(
             name: str(c.PriceDesc),
             price: str(c.CurPrice),
             availStatus: str(c.AvailStatus),
+            ...(str(c.AreaCatCode) ? { code: str(c.AreaCatCode) } : {}),
           })),
         });
       }
