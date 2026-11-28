@@ -16,6 +16,7 @@ import {
   SEAT_LAYOUT_ENDPOINT,
   seatLayoutRequest,
   seatRowsFromGrid,
+  SeatsSoldOut,
 } from './seat-layout.js';
 import { BlockedError, type DateSnapshot, type SeatMap, type Show, type ShowSource, type VenueRef } from './types.js';
 
@@ -111,16 +112,26 @@ export class HttpSource implements ShowSource {
       throw new BlockedError(`seat layout: HTTP ${res.status}`, res.status, Number.isFinite(ra) ? ra : undefined);
     }
 
-    const grid = parseSeatLayout(decryptSeatLayout(encryptedLayoutFrom(json), this.opts.seatLayoutKey));
-    return {
+    const result = (rows: SeatMap['rows']): SeatMap => ({
       source: this.name,
       venue: show.venue,
       date: show.date,
       sessionId: show.sessionId,
       screen: show.screen,
       checkedAt: new Date().toISOString(),
-      rows: seatRowsFromGrid(grid, show.categories),
-    };
+      rows,
+    });
+    let encrypted: string;
+    try {
+      encrypted = encryptedLayoutFrom(json);
+    } catch (err) {
+      // Sold out is a valid "0 free" result (as the browser source reports it), so the
+      // stored seats don't keep showing seats that are gone.
+      if (err instanceof SeatsSoldOut) return result([]);
+      throw err;
+    }
+    const grid = parseSeatLayout(decryptSeatLayout(encrypted, this.opts.seatLayoutKey));
+    return result(seatRowsFromGrid(grid, show.categories));
   }
 
   seatMapUrl(show: Show): string {

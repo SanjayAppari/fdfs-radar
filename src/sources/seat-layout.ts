@@ -21,6 +21,18 @@ export const DEFAULT_SEAT_LAYOUT_KEY = 'kYp3s6v9y$B&E)H+MbQeThWmZq4t7w!z';
 
 export const SEAT_LAYOUT_ENDPOINT = 'https://services-in.bookmyshow.com/doTrans.aspx';
 
+/**
+ * The site refuses the layout because every seat is sold. That is a real
+ * result (0 free), not a skipped check; callers that only skip still can,
+ * since this is a SeatMapUnavailable.
+ */
+export class SeatsSoldOut extends SeatMapUnavailable {
+  constructor(reason: string) {
+    super(`sold out: ${reason}`);
+    this.name = 'SeatsSoldOut';
+  }
+}
+
 /** The layout could not be decrypted or read: the key or format changed. Not a block. */
 export class SeatLayoutFormatError extends Error {
   constructor(message: string) {
@@ -63,7 +75,9 @@ export function encryptedLayoutFrom(json: unknown): string {
   const env = (json as { BookMyShow?: Record<string, unknown> } | null)?.BookMyShow;
   if (!env) throw new SeatLayoutFormatError('seat layout response has no envelope');
   if (String(env.blnSuccess).toLowerCase() !== 'true') {
-    throw new SeatMapUnavailable(`site refused the seat layout: ${String(env.strException || 'no reason given').slice(0, 160)}`);
+    const reason = String(env.strException || 'no reason given').slice(0, 160);
+    if (/sold\s*out/i.test(reason)) throw new SeatsSoldOut(reason);
+    throw new SeatMapUnavailable(`site refused the seat layout: ${reason}`);
   }
   if (typeof env.strData !== 'string' || !env.strData) throw new SeatLayoutFormatError('seat layout response has no data');
   return env.strData;

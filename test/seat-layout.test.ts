@@ -7,6 +7,7 @@ import {
   parseSeatLayout,
   SeatLayoutFormatError,
   seatLayoutRequest,
+  SeatsSoldOut,
   seatRowsFromGrid,
 } from '../src/sources/seat-layout.js';
 import { SeatMapUnavailable } from '../src/sources/types.js';
@@ -116,8 +117,16 @@ describe('seat layout: decrypt + parse', () => {
 });
 
 describe('seat layout: errors', () => {
+  it('"sold out" is its own result (0 free), still a SeatMapUnavailable for callers that only skip', () => {
+    const soldOut = { BookMyShow: { blnSuccess: 'false', strException: "It seems seats are sold out hence we can't proceed further. Please check another show. (#159)" } };
+    expect(() => encryptedLayoutFrom(soldOut)).toThrow(SeatsSoldOut);
+    expect(() => encryptedLayoutFrom(soldOut)).toThrow(SeatMapUnavailable);
+  });
+
   it('a refusal from the site is SeatMapUnavailable (skip, not an error)', () => {
-    expect(() => encryptedLayoutFrom({ BookMyShow: { blnSuccess: 'false', strException: 'Show closed' } })).toThrow(SeatMapUnavailable);
+    const closed = { BookMyShow: { blnSuccess: 'false', strException: 'Show closed' } };
+    expect(() => encryptedLayoutFrom(closed)).toThrow(SeatMapUnavailable);
+    expect(() => encryptedLayoutFrom(closed)).not.toThrow(SeatsSoldOut);
   });
 
   it('a wrong key is a format error, not a block', () => {
