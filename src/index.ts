@@ -5,6 +5,7 @@ import { layoutKey, LiveFeed, seatsKey, snapshotKey, type SeatResult } from './l
 import { log } from './log.js';
 import { formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
+import { HttpSource } from './sources/http.js';
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
 import { RedisStore } from './store.js';
@@ -335,15 +336,19 @@ async function main() {
   const store = new RedisStore(env.redisUrl);
   await store.ping();
   const notifier = new TelegramNotifier(env.telegramToken, env.telegramChatId);
-  const source: ShowSource = new TicketingSource({
-    baseUrl: env.baseUrl,
-    homeVenue: cfg.venues[0]!,
-    region: cfg.region,
-    userDataDir: env.userDataDir,
-    headless: env.headless,
-    channel: env.browserChannel,
-    reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
-  });
+  const source: ShowSource =
+    env.source === 'http'
+      ? new HttpSource({ baseUrl: env.baseUrl, region: cfg.region, seatLayoutKey: env.seatLayoutKey })
+      : new TicketingSource({
+          baseUrl: env.baseUrl,
+          homeVenue: cfg.venues[0]!,
+          region: cfg.region,
+          userDataDir: env.userDataDir,
+          headless: env.headless,
+          channel: env.browserChannel,
+          reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
+        });
+  log.info(`source: ${env.source}`);
 
   const live = new LiveFeed(store, cfg, source.name);
   const ctx: Ctx = {
@@ -544,7 +549,7 @@ async function main() {
       sent++;
       await step(`${pick.venue.code} ${pick.date}`, () => pollDate(ctx, pick.venue, pick.date, true));
       // Early warning: if the site says few requests remain, back off before hitting zero.
-      const hint = (source as TicketingSource).lastRateHint ?? {};
+      const hint = source.lastRateHint ?? {};
       if (hint.remaining !== undefined && hint.limit && hint.remaining <= Math.max(2, hint.limit * 0.2)) {
         const holdMs = (hint.resetSeconds ?? hint.retryAfter ?? 60) * 1000;
         budget.hold(Date.now() + holdMs);

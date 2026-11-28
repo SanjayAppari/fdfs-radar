@@ -14,88 +14,10 @@ import {
   type VenueRef,
 } from './types.js';
 
-// ---------------------------------------------------------------------------
-// Parser (pure, unit-tested against fixtures/)
-// ---------------------------------------------------------------------------
+import { bookingUrl, rateHintFrom, seatMapUrl, showtimesPath, snapshotFromResponse, type RateHint } from './site.js';
 
-type Json = Record<string, any>;
-
-const str = (v: unknown): string => (v === undefined || v === null ? '' : String(v).trim());
-
-/**
- * Accepts either the full byvenue response ({ ShowDatesArray, ShowDetails[] })
- * or a bare ShowDetails[0] object (what the fixture contains).
- */
-export function parseByVenue(
-  json: unknown,
-  date: string,
-  meta: { source: string; venue: string },
-): DateSnapshot {
-  const base = { source: meta.source, venue: meta.venue, date };
-  if (!json || typeof json !== 'object') {
-    return { ...base, status: 'not_open', openDates: null, shows: [] };
-  }
-
-  const root = json as Json;
-
-  const openDates: string[] | null = Array.isArray(root.ShowDatesArray)
-    ? root.ShowDatesArray.filter((d: Json) => !isTruthyFlag(d?.isDisabled)).map((d: Json) => str(d?.DateCode))
-    : null;
-
-  const details: Json | undefined = Array.isArray(root.ShowDetails)
-    ? root.ShowDetails[0]
-    : root.Event
-      ? root
-      : undefined;
-
-  if (!details || str(details.Date) !== date) {
-    return { ...base, status: 'not_open', openDates, shows: [] };
-  }
-  if (openDates && !openDates.includes(date)) {
-    return { ...base, status: 'not_open', openDates, shows: [] };
-  }
-  if (isTruthyFlag(details.Venues?.isVenueDown)) {
-    return { ...base, status: 'venue_down', openDates, shows: [] };
-  }
-
-  const shows: Show[] = [];
-  for (const ev of asArray(details.Event)) {
-    const movie = str(ev.EventTitle);
-    for (const child of asArray(ev.ChildEvents)) {
-      for (const st of asArray(child.ShowTimes)) {
-        const sessionId = str(st.SessionId);
-        if (!sessionId) continue;
-        shows.push({
-          ...base,
-          sessionId,
-          movie,
-          eventName: str(child.EventName),
-          eventCode: str(child.EventCode),
-          dimension: str(child.EventDimension),
-          screen: str(st.ScreenName),
-          attributes: str(st.Attributes),
-          time: str(st.ShowTime),
-          showDateTime: str(st.ShowDateTime),
-          availStatus: str(st.AvailStatus),
-          categories: asArray(st.Categories).map((c) => ({
-            name: str(c.PriceDesc),
-            price: str(c.CurPrice),
-            availStatus: str(c.AvailStatus),
-          })),
-        });
-      }
-    }
-  }
-  return { ...base, status: 'open', openDates, shows };
-}
-
-function asArray(v: unknown): Json[] {
-  return Array.isArray(v) ? (v as Json[]) : [];
-}
-
-function isTruthyFlag(v: unknown): boolean {
-  return v === true || v === 1 || v === '1' || str(v).toLowerCase() === 'true' || str(v).toUpperCase() === 'Y';
-}
+// The parser lives in site.ts (shared with the HTTP source); re-exported for existing imports.
+export { parseByVenue } from './site.js';
 
 // ---------------------------------------------------------------------------
 // Playwright-backed source
@@ -141,13 +63,12 @@ export class TicketingSource implements ShowSource {
   /** Last cache status seen on the showtimes API (HIT/MISS/…), for diagnostics */
   lastCacheStatus = '';
   /** Rate-limit hints from the last successful response, when the site sends them */
-  lastRateHint: { remaining?: number; limit?: number; resetSeconds?: number; retryAfter?: number } = {};
+  lastRateHint: RateHint = {};
 
   constructor(private readonly opts: TicketingSourceOptions) {}
 
   bookingUrl(venue: VenueRef, date: string): string {
-    const { baseUrl, region } = this.opts;
-    return `${baseUrl}/cinemas/${region}/${venue.slug}/buytickets/${venue.code}/${date}`;
+    return bookingUrl(this.opts.baseUrl, this.opts.region, venue, date);
   }
 
   async init(): Promise<void> {
@@ -207,14 +128,8 @@ export class TicketingSource implements ShowSource {
       await this.reloading;
     }
 
-    const { region } = this.opts;
     const venue = venueRef.code;
-    // The response is otherwise served from the CDN cache, often minutes old;
-    // a unique parameter makes every poll return live data.
-    const path =
-      `/api/v3/mobile/showtimes/byvenue?dateCode=${date}` +
-      `&venueCode=${encodeURIComponent(venue)}&regionCode=${encodeURIComponent(region)}&appCode=WEBV2` +
-      (live ? `&_=${Date.now()}${Math.floor(Math.random() * 1000)}` : '');
+    const path = showtimesPath(venue, date, this.opts.region, live);
 
     const res = await page.evaluate(
       async ({ path, timeoutMs, live }): Promise<PageFetchResult> => {
@@ -245,36 +160,18 @@ export class TicketingSource implements ShowSource {
     );
 
     this.lastCacheStatus = res.cache;
-    const num = (v: string) => (v && Number.isFinite(Number(v)) ? Number(v) : undefined);
-    this.lastRateHint = {
-      remaining: num(res.rlRemaining),
-      limit: num(res.rlLimit),
-      resetSeconds: num(res.rlReset),
-      retryAfter: num(res.retryAfter),
+    const headers: Record<string, string> = {
+      'x-ratelimit-remaining': res.rlRemaining,
+      'x-ratelimit-limit': res.rlLimit,
+      'x-ratelimit-reset': res.rlReset,
+      'retry-after': res.retryAfter,
     };
-    let json: unknown;
-    try {
-      json = JSON.parse(res.text);
-    } catch {
-      throw new BlockedError(
-        `non-JSON response (HTTP ${res.status}, ${res.contentType || 'no content-type'}): ${res.text.slice(0, 120).replace(/\s+/g, ' ')}`,
-        res.status,
-      );
-    }
-    if (res.status >= 400) {
-      const ra = Number.parseInt(res.retryAfter, 10);
-      throw new BlockedError(
-        res.status === 429 ? 'rate limited (HTTP 429)' : `HTTP ${res.status} with JSON body`,
-        res.status,
-        Number.isFinite(ra) ? ra : undefined,
-      );
-    }
-    return parseByVenue(json, date, { source: this.name, venue });
+    this.lastRateHint = rateHintFrom((h) => headers[h] || null);
+    return snapshotFromResponse(res, date, { source: this.name, venue });
   }
 
   seatMapUrl(show: Show): string {
-    const { baseUrl, region } = this.opts;
-    return `${baseUrl}/movies/${region}/seat-layout/${show.eventCode}/${show.venue}/${show.sessionId}/${show.date}`;
+    return seatMapUrl(this.opts.baseUrl, this.opts.region, show);
   }
 
   /**

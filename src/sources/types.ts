@@ -94,6 +94,8 @@ export interface ShowSource {
   /** Public booking link for a venue + date, used in alerts */
   bookingUrl(venue: VenueRef, date: string): string;
   close(): Promise<void>;
+  /** Rate-limit hints from the last showtimes response, when the site sends them */
+  readonly lastRateHint?: { remaining?: number; limit?: number; resetSeconds?: number; retryAfter?: number };
 }
 
 /** Thrown when the source answers with a bot-challenge / non-JSON page. */

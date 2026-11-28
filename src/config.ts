@@ -261,6 +261,10 @@ export interface EnvConfig {
   userDataDir: string;
   headless: boolean;
   browserChannel?: string;
+  /** "browser" = Playwright (default), "http" = plain HTTP with a browser fingerprint */
+  source: 'browser' | 'http';
+  /** Override for the seat-layout AES key (http source) */
+  seatLayoutKey?: string;
 }
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -277,5 +281,13 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): EnvConfig {
     userDataDir: resolve(env.BROWSER_PROFILE_DIR?.trim() || '.browser-profile'),
     headless: (env.HEADLESS ?? 'false').toLowerCase() === 'true',
     browserChannel: env.BROWSER_CHANNEL?.trim() || undefined,
+    source: parseSource(env.SOURCE),
+    seatLayoutKey: env.SEAT_LAYOUT_KEY?.trim() || undefined,
   };
+}
+
+function parseSource(v: string | undefined): EnvConfig['source'] {
+  const s = (v ?? '').trim().toLowerCase() || 'browser';
+  if (s !== 'browser' && s !== 'http') throw new Error(`SOURCE must be "browser" or "http" (got "${v}")`);
+  return s;
 }
