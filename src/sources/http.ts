@@ -8,6 +8,7 @@
  */
 import { Impit } from 'impit';
 import { log } from '../log.js';
+import { BY_MOVIE_PATH, ByMovieError, byMovieHeaders, byMovieQueryString, parseByMovie, type ByMovieQuery, type ByMovieResult } from './by-movie.js';
 import { bookingUrl, rateHintFrom, seatMapUrl, showtimesPath, snapshotFromResponse, type RateHint } from './site.js';
 import {
   decryptSeatLayout,
@@ -132,6 +133,31 @@ export class HttpSource implements ShowSource {
     }
     const grid = parseSeatLayout(decryptSeatLayout(encrypted, this.opts.seatLayoutKey));
     return result(seatRowsFromGrid(grid, show.categories));
+  }
+
+  /**
+   * By-movie showtimes (all cinemas, one language, one date). A 429 is a rate
+   * limit as usual; any other refusal or odd answer is a ByMovieError, so the
+   * watcher can stop using this API without treating it as a bot check.
+   */
+  async fetchByMovie(q: Omit<ByMovieQuery, 'region'>): Promise<ByMovieResult> {
+    const url = `${this.opts.baseUrl}${BY_MOVIE_PATH}?${byMovieQueryString({ ...q, region: this.opts.region })}`;
+    const res = await this.client.fetch(url, { headers: byMovieHeaders(this.opts.region) });
+    const text = await res.text();
+    if (res.status === 429) {
+      const ra = Number.parseInt(res.headers.get('retry-after') ?? '', 10);
+      throw new BlockedError('by-movie: rate limited (HTTP 429)', 429, Number.isFinite(ra) ? ra : undefined);
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new ByMovieError(`by-movie: non-JSON response (HTTP ${res.status}, ${res.headers.get('content-type') ?? 'no content-type'})`);
+    }
+    if (res.status >= 400 && !(json as { metadata?: { error?: unknown } })?.metadata?.error) {
+      throw new ByMovieError(`by-movie: HTTP ${res.status}`);
+    }
+    return parseByMovie(json, q.date);
   }
 
   seatMapUrl(show: Show): string {

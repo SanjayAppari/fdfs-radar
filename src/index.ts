@@ -6,6 +6,8 @@ import { log } from './log.js';
 import { escapeHtml, formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
 import { isNetworkError, LogThrottle, networkReason, Reachability, type HealthMessage } from './health.js';
+import { ByMoviePlanner } from './planner.js';
+import { ByMovieError } from './sources/by-movie.js';
 import { FallbackSource, type SwitchEvent } from './sources/fallback.js';
 import { HttpSource } from './sources/http.js';
 import { TicketingSource } from './sources/ticketing.js';
@@ -373,10 +375,12 @@ function trackReachability(source: ShowSource, reach: Reachability): ShowSource 
     };
   const fetchDate = track(source.fetchDate.bind(source));
   const fetchSeatMap = source.fetchSeatMap ? track(source.fetchSeatMap.bind(source)) : undefined;
+  const fetchByMovie = source.fetchByMovie ? track(source.fetchByMovie.bind(source)) : undefined;
   return new Proxy(source, {
     get(target, prop) {
       if (prop === 'fetchDate') return fetchDate;
       if (prop === 'fetchSeatMap') return fetchSeatMap;
+      if (prop === 'fetchByMovie') return fetchByMovie;
       const v = Reflect.get(target, prop);
       return typeof v === 'function' ? v.bind(target) : v;
     },
@@ -616,6 +620,33 @@ async function main() {
     // Every request is live (the site's limiter counts cached ones too). Each slot
     // goes to the venue × date that is most overdue, priority dates weighted ×4.
     const lastFetched = new Map<string, number>(savedFetchedAt);
+
+    // By-movie change detection (see planner.ts). Needs an HTTP source and venues that
+    // watch named movies (a by-movie request can't cover "every movie").
+    const planner =
+      cfg.poll.byMovie && !once && source.fetchByMovie && cfg.venues.every((v) => v.movies.length > 0)
+        ? new ByMoviePlanner({ fullRefreshMs: cfg.poll.fullRefreshMinutes * 60_000, priorityShare: cfg.poll.priorityShare })
+        : null;
+    const learnMovies = () => {
+      if (!planner) return;
+      for (const snap of ctx.latest.values()) {
+        const venue = ctx.venueByCode.get(snap.venue);
+        if (!venue) continue;
+        planner.learn(snap.shows.filter((sh) => isWatchedMovie(sh, { movies: venue.movies })).map((sh) => ({ movie: sh.movie, eventCode: sh.eventCode, date: snap.date })));
+      }
+    };
+    if (planner) {
+      for (const [k, at] of savedFetchedAt) {
+        const [venue, date] = k.split(':') as [string, string];
+        planner.read(venue, date, at);
+      }
+      learnMovies();
+      log.info(`showtimes: by-movie change detection on (movies: ${planner.movieTitles.join(', ') || 'none seen yet, plain rotation until one is'})`);
+    } else {
+      log.info('showtimes: plain per-venue rotation');
+    }
+    let byMovieSent = 0;
+    let readsFromChanges = 0;
     let priSent = 0;
     let restSent = 0;
     let sent = 0;
@@ -641,6 +672,52 @@ async function main() {
       // within each group the most overdue combo goes next.
       const pri = combos.filter(isPriority);
       const rest = combos.filter((c) => !isPriority(c));
+
+      const action = planner?.next(combos.map((c) => ({ venue: c.venue.code, date: c.date, priority: isPriority(c) }))) ?? null;
+      if (action && planner) {
+        await budget.take(stop.signal);
+        if (stop.signal.aborted) break;
+        sent++;
+        if (action.kind === 'refresh') {
+          const venue = ctx.venueByCode.get(action.venue)!;
+          if (action.reason !== 'full refresh') {
+            readsFromChanges++;
+            log.info(`${venue.code} ${action.date}: by-movie spotted a change (${action.reason}); reading it in full`);
+          }
+          lastFetched.set(`${venue.code}:${action.date}`, Date.now());
+          planner.read(venue.code, action.date);
+          await step(`${venue.code} ${action.date}`, () => pollDate(ctx, venue, action.date, true));
+          learnMovies();
+        } else {
+          byMovieSent++;
+          await step(`by-movie ${action.language || action.etCodes} ${action.date}`, async () => {
+            try {
+              const result = await source.fetchByMovie!({ etCodes: action.etCodes, refEventCode: action.refEventCode, language: action.language, date: action.date });
+              const venues = cfg.venues.filter((v) => v.dates.includes(action.date)).map((v) => v.code);
+              const snapshots = new Map(venues.map((v) => [v, ctx.latest.get(`${v}:${action.date}`)]));
+              for (const n of planner.onProbe(action, result, { venues, snapshots })) {
+                log.info(`by-movie ${action.language} ${action.date}: ${n.venue} changed (${n.reason})`);
+              }
+            } catch (err) {
+              if (!(err instanceof ByMovieError)) throw err;
+              planner.disable(30 * 60_000);
+              log.warn(`by-movie API not usable (${err.message}); plain per-venue rotation for 30 min`);
+            }
+          });
+        }
+        if (Date.now() - summaryAt >= 60_000) {
+          log.info(
+            `showtimes: ${sent} requests in the last minute (budget ${budget.perMinute}/min): ` +
+              `${byMovieSent} by-movie, ${sent - byMovieSent} full reads (${readsFromChanges} for changes); ${planner.pendingCount} changes waiting`,
+          );
+          sent = 0;
+          byMovieSent = 0;
+          readsFromChanges = 0;
+          summaryAt = Date.now();
+        }
+        continue;
+      }
+
       const usePriority = pri.length > 0 && (rest.length === 0 || priSent < (priSent + restSent + 1) * cfg.poll.priorityShare);
       const group = usePriority ? pri : rest;
       const pick = group
@@ -652,8 +729,10 @@ async function main() {
       await budget.take(stop.signal);
       if (stop.signal.aborted) break;
       lastFetched.set(pick.k, Date.now());
+      planner?.read(pick.venue.code, pick.date);
       sent++;
       await step(`${pick.venue.code} ${pick.date}`, () => pollDate(ctx, pick.venue, pick.date, true));
+      learnMovies();
       // Early warning: if the site says few requests remain, back off before hitting zero.
       const hint = source.lastRateHint ?? {};
       if (hint.remaining !== undefined && hint.limit && hint.remaining <= Math.max(2, hint.limit * 0.2)) {

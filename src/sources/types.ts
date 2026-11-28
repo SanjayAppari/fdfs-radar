@@ -3,6 +3,7 @@
  * prasadz.com, District, ...) normalises its data into these shapes so the
  * diff + notifier never care where a show came from.
  */
+import type { ByMovieQuery, ByMovieResult } from './by-movie.js';
 
 export interface SeatCategory {
   /** e.g. "EXECUTIVE", "GOLD" */
@@ -96,6 +97,11 @@ export interface ShowSource {
   /** Public booking link for a venue + date, used in alerts */
   bookingUrl(venue: VenueRef, date: string): string;
   close(): Promise<void>;
+  /**
+   * Optional: one movie's showtimes at every cinema in the region for a date
+   * (by-movie API), used to spot changes cheaply. HTTP only.
+   */
+  fetchByMovie?(q: Omit<ByMovieQuery, 'region'>): Promise<ByMovieResult>;
   /** Rate-limit hints from the last showtimes response, when the site sends them */
   readonly lastRateHint?: { remaining?: number; limit?: number; resetSeconds?: number; retryAfter?: number };
 }

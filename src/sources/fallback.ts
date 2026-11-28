@@ -95,6 +95,11 @@ export class FallbackSource implements ShowSource {
     return this.run('seats', (s) => s.fetchSeatMap!(show, slot));
   }
 
+  /** By-movie data comes from plain HTTP only (no browser equivalent), so it never falls back. */
+  get fetchByMovie(): ShowSource['fetchByMovie'] {
+    return this.http.fetchByMovie?.bind(this.http);
+  }
+
   seatMapUrl(show: Show): string {
     return this.http.seatMapUrl?.(show) ?? this.browser.seatMapUrl!(show);
   }

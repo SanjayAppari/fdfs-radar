@@ -22,6 +22,14 @@ export interface PollConfig {
   requestsPerMinute: number;
   /** Share of the budget reserved for priority combos (0–1) */
   priorityShare: number;
+  /**
+   * Spot changes with the by-movie API (one request covers every cinema for a
+   * movie, language and date) and read a venue's full showtimes only when it
+   * changed. HTTP sources only; falls back to plain rotation if it fails.
+   */
+  byMovie: boolean;
+  /** With byMovie: still read each venue × date in full at least this often */
+  fullRefreshMinutes: number;
 }
 
 export interface SeatConfig {
@@ -157,6 +165,8 @@ const DEFAULT_POLL: PollConfig = {
   liveDates: [],
   requestsPerMinute: 4,
   priorityShare: 0.75,
+  byMovie: true,
+  fullRefreshMinutes: 60,
 };
 
 /** Accepts "20261217" or "2026-12-17". */
@@ -202,6 +212,8 @@ export function parseConfig(raw: unknown): WatchConfig {
   if (poll.minSeconds > poll.maxSeconds) throw new Error('poll.minSeconds must be <= poll.maxSeconds');
   if (!(poll.concurrency >= 1 && poll.concurrency <= 6)) throw new Error('poll.concurrency must be 1–6');
   if (!(poll.priorityShare >= 0 && poll.priorityShare <= 1)) throw new Error('poll.priorityShare must be 0–1');
+  if (typeof poll.byMovie !== 'boolean') throw new Error('poll.byMovie must be true or false');
+  if (!(poll.fullRefreshMinutes >= 5)) throw new Error('poll.fullRefreshMinutes must be at least 5');
   if (!(poll.requestsPerMinute > 0 && poll.requestsPerMinute <= 6)) {
     throw new Error('poll.requestsPerMinute must be between 0 and 6 (the site locks you out for an hour above ~6/min)');
   }

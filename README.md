@@ -136,6 +136,22 @@ carry on. The layout capture never calls the showtimes API.
 Refresh time ≈ priority combos ÷ (budget × share) — e.g. 2 priority combos at
 4/min × 75% ≈ every 40 s; everything else shares the remaining 1/min.
 
+**By-movie change detection** (`poll.byMovie`, default on; `SOURCE=http` or
+`auto` only). One request to the site's by-movie API returns a movie's shows at
+**every cinema** in the region for one date and language (all formats), so
+the budget goes mostly to those instead of one venue at a time
+([src/planner.ts](src/planner.ts), [src/probe.ts](src/probe.ts)). Each answer
+is compared with the venue snapshots; a venue × date with a new show, a show
+that became (un)available or one that disappeared is then read in full through
+the per-venue API as before, which raises the alerts. Each slot goes to, in
+order: a changed venue × date → anything not read in full for
+`poll.fullRefreshMinutes` (default 60) → the next by-movie request (priority
+dates get `poll.priorityShare`). Languages and formats are learned from the
+site's answers; a date the site doesn't offer in a language is skipped until it
+appears in that language's date list. Needs every venue to list `movies`; if
+the by-movie API stops answering properly it falls back to the plain rotation
+for 30 min. The by-movie data is cached by the CDN for up to 30 s.
+
 The old single-venue format (`venue`, `venueSlug`,
 `venueName`, `seats.screens`) still loads.
 
