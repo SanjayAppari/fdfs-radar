@@ -385,10 +385,17 @@ async function main() {
 
   // Seed the show list from the last saved snapshots, so seat checks can run
   // straight away (and keep running if showtimes are temporarily refused).
+  // Their fetch times seed the scheduler, so a restart carries on the rotation
+  // instead of starting it over (which kept the least-polled dates waiting).
+  const savedFetchedAt = new Map<string, number>();
   for (const v of cfg.venues) {
     for (const date of v.dates) {
       const raw = await store.get(snapshotKey(source.name, v.code, date));
-      if (raw) ctx.latest.set(`${v.code}:${date}`, JSON.parse(raw) as DateSnapshot);
+      if (!raw) continue;
+      const snap = JSON.parse(raw) as DateSnapshot & { fetchedAt?: string };
+      ctx.latest.set(`${v.code}:${date}`, snap);
+      const at = Date.parse(snap.fetchedAt ?? '');
+      if (Number.isFinite(at)) savedFetchedAt.set(`${v.code}:${date}`, at);
     }
   }
   await live.setStatus('starting');
@@ -525,7 +532,7 @@ async function main() {
     // Showtimes scheduler: one request at a time under a hard per-minute budget.
     // Every request is live (the site's limiter counts cached ones too). Each slot
     // goes to the venue × date that is most overdue, priority dates weighted ×4.
-    const lastFetched = new Map<string, number>();
+    const lastFetched = new Map<string, number>(savedFetchedAt);
     let priSent = 0;
     let restSent = 0;
     let sent = 0;
