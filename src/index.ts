@@ -5,6 +5,7 @@ import { layoutKey, LiveFeed, seatsKey, snapshotKey, type SeatResult } from './l
 import { log } from './log.js';
 import { escapeHtml, formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
+import { isNetworkError, LogThrottle, networkReason, Reachability, type HealthMessage } from './health.js';
 import { FallbackSource, type SwitchEvent } from './sources/fallback.js';
 import { HttpSource } from './sources/http.js';
 import { TicketingSource } from './sources/ticketing.js';
@@ -321,7 +322,12 @@ async function hotLoop(ctx: Ctx): Promise<void> {
           await ctx.live.setStatus('blocked', err.message);
           break;
         }
-        log.warn(`fast loop ${show.venue} ${show.sessionId}: ${(err as Error).message.split('\n')[0]}`);
+        if (isNetworkError(err)) {
+          const line = netLog.pass('fast', `fast loop ${show.venue} ${show.sessionId}: ${networkReason(err)}`);
+          if (line) log.warn(line);
+        } else {
+          log.warn(`fast loop ${show.venue} ${show.sessionId}: ${(err as Error).message.split('\n')[0]}`);
+        }
       }
       await sleep(randomBetween(1, 2.5) * 1000, stop.signal);
     }
@@ -329,6 +335,52 @@ async function hotLoop(ctx: Ctx): Promise<void> {
     const elapsed = Date.now() - started;
     if (elapsed < target) await sleep(target - elapsed, stop.signal);
   }
+}
+
+/** Throttles repeated network-error lines (one per loop per minute). */
+const netLog = new LogThrottle();
+
+const hhmm = (t: number) => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+function outageMessage(m: HealthMessage): string {
+  if (m.kind === 'down') {
+    return (
+      `⚠️ <b>Watcher can't reach the site</b> since ${hhmm(m.since)} (${escapeHtml(m.reason)}). ` +
+      `No new-show or seat alerts until it's back; it keeps retrying and will tell you when it is.`
+    );
+  }
+  const mins = Math.max(1, Math.round((m.to - m.from) / 60_000));
+  return `✅ <b>Watcher back online</b>: the site was unreachable ${hhmm(m.from)}–${hhmm(m.to)} (${mins} min, ${escapeHtml(m.reason)}). Alerts resume now.`;
+}
+
+/**
+ * Reports every request's outcome to `reach`: any answer from the site counts
+ * as reachable (blocks and refusals included); network errors count as failures.
+ */
+function trackReachability(source: ShowSource, reach: Reachability): ShowSource {
+  const track =
+    <A extends unknown[], R>(fn: (...a: A) => Promise<R>) =>
+    async (...a: A): Promise<R> => {
+      try {
+        const r = await fn(...a);
+        reach.ok();
+        return r;
+      } catch (err) {
+        if (isNetworkError(err)) reach.fail(networkReason(err));
+        else reach.ok();
+        throw err;
+      }
+    };
+  const fetchDate = track(source.fetchDate.bind(source));
+  const fetchSeatMap = source.fetchSeatMap ? track(source.fetchSeatMap.bind(source)) : undefined;
+  return new Proxy(source, {
+    get(target, prop) {
+      if (prop === 'fetchDate') return fetchDate;
+      if (prop === 'fetchSeatMap') return fetchSeatMap;
+      const v = Reflect.get(target, prop);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
 }
 
 function switchMessage(e: SwitchEvent): string {
@@ -358,12 +410,15 @@ async function main() {
       channel: env.browserChannel,
       reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
     });
-  const source: ShowSource =
+  const reach = new Reachability();
+  const source: ShowSource = trackReachability(
     env.source === 'http'
       ? http()
       : env.source === 'auto'
         ? new FallbackSource(http(), browser(), { onSwitch: (e) => notifier.send(switchMessage(e)) })
-        : browser();
+        : browser(),
+    reach,
+  );
   log.info(`source: ${env.source}${env.source === 'auto' ? ' (plain HTTP, browser as fallback)' : ''}`);
 
   const live = new LiveFeed(store, cfg, source.name);
@@ -486,6 +541,14 @@ async function main() {
         await source.recover().catch((e) => log.error(`recover failed: ${(e as Error).message}`));
         return false;
       }
+      if (isNetworkError(err)) {
+        // Can't reach the site at all (DNS, no network…): recovering the source won't help,
+        // the outage watchdog tells the user, and one log line a minute is enough.
+        const line = netLog.pass('step', `${label}: ${networkReason(err)}: ${(err as Error).message.split('\n')[0]}`);
+        if (line) log.error(line);
+        await live.setStatus('error', `site unreachable (${networkReason(err)})`);
+        return true;
+      }
       consecutiveErrors++;
       log.error(`${label}: ${(err as Error).stack ?? err}`);
       // One failed seat read isn't the watcher being down: only flag the status
@@ -525,6 +588,26 @@ async function main() {
     }
   }
 
+  /** Tells the user when the site has been unreachable for a while, and when it's back. */
+  async function outageWatchdog(): Promise<void> {
+    while (!stop.signal.aborted) {
+      await sleep(20_000, stop.signal);
+      const msg = reach.due();
+      if (!msg) continue;
+      try {
+        await notifier.send(outageMessage(msg));
+        reach.markSent(msg.kind);
+        log.info(msg.kind === 'down' ? `outage alert sent (unreachable since ${hhmm(msg.since)})` : `back-online alert sent (${hhmm(msg.from)}–${hhmm(msg.to)})`);
+      } catch (e) {
+        // Telegram needs the network too; try again next round.
+        const line = netLog.pass('outage-send', `outage message not sent yet: ${(e as Error).message.split('\n')[0]}`);
+        if (line) log.warn(line);
+      }
+      if (msg.kind === 'up') await live.setStatus('ok');
+    }
+  }
+
+  const watchdog = once ? Promise.resolve() : outageWatchdog().catch((e) => log.error(`outage watchdog crashed: ${(e as Error).stack ?? e}`));
   const seats = once ? Promise.resolve() : seatLoop().catch((e) => log.error(`seat loop crashed: ${(e as Error).stack ?? e}`));
   const fast = once ? Promise.resolve() : hotLoop(ctx).catch((e) => log.error(`fast loop crashed: ${(e as Error).stack ?? e}`));
 
@@ -598,7 +681,7 @@ async function main() {
     }
   } finally {
     stop.abort();
-    await Promise.all([fast, seats]);
+    await Promise.all([fast, seats, watchdog]);
     await live.setStatus('stopped');
     await source.close();
     await store.close();
