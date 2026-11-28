@@ -3,8 +3,9 @@ import { loadConfig, loadEnv, type VenueConfig, type WatchConfig } from './confi
 import { diffSnapshot, isPriority, isWatchedMovie } from './diff.js';
 import { layoutKey, LiveFeed, seatsKey, snapshotKey, type SeatResult } from './live.js';
 import { log } from './log.js';
-import { formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
+import { escapeHtml, formatAlert, formatMiddleSeats, formatRowsOpened, packMessages, TelegramNotifier, type OpenedRow } from './notify/telegram.js';
 import { analyseSeats, detectRowOrder, expandRows, hallFor, learnedHall, orderOfSpec, seatDirection, sortRows, type LayoutSource, type RowOrder } from './seats.js';
+import { FallbackSource, type SwitchEvent } from './sources/fallback.js';
 import { HttpSource } from './sources/http.js';
 import { TicketingSource } from './sources/ticketing.js';
 import { BlockedError, SeatMapUnavailable, type DateSnapshot, type Show, type ShowSource } from './sources/types.js';
@@ -330,25 +331,40 @@ async function hotLoop(ctx: Ctx): Promise<void> {
   }
 }
 
+function switchMessage(e: SwitchEvent): string {
+  const job = e.job === 'seats' ? 'Seat maps' : 'Showtimes';
+  if (e.to === 'http') return `✅ <b>${job} back on plain HTTP</b> (${escapeHtml(e.reason)}).`;
+  const mins = e.retryAt ? Math.max(1, Math.round((e.retryAt - Date.now()) / 60_000)) : 0;
+  return (
+    `🔁 <b>${job} switched to the browser</b>: plain HTTP failed (${escapeHtml(e.reason)}). ` +
+    `Nothing is missed; plain HTTP will be tried again in ${mins} min.`
+  );
+}
+
 async function main() {
   const cfg = loadConfig();
   const env = loadEnv();
   const store = new RedisStore(env.redisUrl);
   await store.ping();
   const notifier = new TelegramNotifier(env.telegramToken, env.telegramChatId);
+  const http = () => new HttpSource({ baseUrl: env.baseUrl, region: cfg.region, seatLayoutKey: env.seatLayoutKey });
+  const browser = () =>
+    new TicketingSource({
+      baseUrl: env.baseUrl,
+      homeVenue: cfg.venues[0]!,
+      region: cfg.region,
+      userDataDir: env.userDataDir,
+      headless: env.headless,
+      channel: env.browserChannel,
+      reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
+    });
   const source: ShowSource =
     env.source === 'http'
-      ? new HttpSource({ baseUrl: env.baseUrl, region: cfg.region, seatLayoutKey: env.seatLayoutKey })
-      : new TicketingSource({
-          baseUrl: env.baseUrl,
-          homeVenue: cfg.venues[0]!,
-          region: cfg.region,
-          userDataDir: env.userDataDir,
-          headless: env.headless,
-          channel: env.browserChannel,
-          reloadEveryMs: cfg.poll.reloadEveryMinutes * 60_000,
-        });
-  log.info(`source: ${env.source}`);
+      ? http()
+      : env.source === 'auto'
+        ? new FallbackSource(http(), browser(), { onSwitch: (e) => notifier.send(switchMessage(e)) })
+        : browser();
+  log.info(`source: ${env.source}${env.source === 'auto' ? ' (plain HTTP, browser as fallback)' : ''}`);
 
   const live = new LiveFeed(store, cfg, source.name);
   const ctx: Ctx = {

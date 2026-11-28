@@ -14,7 +14,8 @@ Telegram when:
 Shows in a priority format (Infinity Vision, PCX, IMAX…) are prefixed with 🔥.
 The first time a date is seen it is recorded as a **baseline** with no alerts.
 
-Designed to run on your Mac at home (residential IP), not on a server.
+Designed to run at home (residential IP). With `SOURCE=http` or `auto` (see
+below) it doesn't need a browser, so a small always-on machine is enough.
 
 ## How it works
 
@@ -39,6 +40,24 @@ config.json ─┐
 - **Not open:** a date is "open" only if `ShowDetails[0].Date` equals the
   requested date (and, when present, `ShowDatesArray` lists it as enabled).
 - **Venue down:** `Venues.isVenueDown` → logged, state untouched.
+
+### Browser or plain HTTP (`SOURCE` in .env)
+
+| `SOURCE` | What runs | Memory |
+| --- | --- | --- |
+| `browser` (default) | Playwright/Chromium, as above | ~0.5–1 GB |
+| `http` | [src/sources/http.ts](src/sources/http.ts): the same requests as plain HTTP with a real browser's TLS fingerprint ([impit](https://www.npmjs.com/package/impit)). Seat maps come from the site's seat-layout endpoint, decrypted and parsed by [src/sources/seat-layout.ts](src/sources/seat-layout.ts) | ~100 MB |
+| `auto` (recommended) | `http`, with the browser as fallback ([src/sources/fallback.ts](src/sources/fallback.ts)) | ~100 MB until a fallback |
+
+In `auto`, showtimes and seat maps fall back **separately**. A bot check
+(403/challenge) or an unreadable seat layout moves that job to the browser and
+retries the same request there at once, with one Telegram message. Plain HTTP
+is tried again after 30 min, then 1 h, 2 h, 4 h. Rate limits (429) don't switch
+anything: they apply to the connection, whichever source sends the request.
+
+If the site changes the seat-layout key, set `SEAT_LAYOUT_KEY` in `.env`.
+Playwright is an optional dependency: `npm install --omit=optional` skips it
+on a machine that only runs `SOURCE=http`.
 
 ### Adding another source (prasadz.com, District, …)
 

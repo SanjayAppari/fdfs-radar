@@ -23,13 +23,15 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "impit": "^0.14.9",
-    "ioredis": "^5.8.2",
-    "playwright": "^1.65.1"
+    "ioredis": "^5.8.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.65.1"
   }
 }
